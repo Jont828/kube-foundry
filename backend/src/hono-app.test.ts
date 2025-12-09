@@ -165,4 +165,96 @@ describe('Hono Routes', () => {
       expect([200, 404]).toContain(res.status);
     });
   });
+
+  describe('HuggingFace OAuth Routes', () => {
+    test('GET /api/oauth/huggingface/config returns OAuth config', async () => {
+      const res = await app.request('/api/oauth/huggingface/config');
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.clientId).toBeDefined();
+      expect(data.authorizeUrl).toBe('https://huggingface.co/oauth/authorize');
+      expect(data.scopes).toBeDefined();
+      expect(Array.isArray(data.scopes)).toBe(true);
+      expect(data.scopes).toContain('openid');
+      expect(data.scopes).toContain('profile');
+      expect(data.scopes).toContain('read-repos');
+    });
+
+    test('POST /api/oauth/huggingface/token validates required fields', async () => {
+      const res = await app.request('/api/oauth/huggingface/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    test('POST /api/oauth/huggingface/token validates code verifier length', async () => {
+      const res = await app.request('/api/oauth/huggingface/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: 'test_code',
+          codeVerifier: 'short', // Must be at least 43 characters
+          redirectUri: 'http://localhost:3000/callback',
+        }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    test('POST /api/oauth/huggingface/token validates redirect URI format', async () => {
+      const res = await app.request('/api/oauth/huggingface/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: 'test_code',
+          codeVerifier: 'a'.repeat(50), // Valid length
+          redirectUri: 'not-a-valid-url',
+        }),
+      });
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('HuggingFace Secrets Routes', () => {
+    test('GET /api/secrets/huggingface/status returns status', async () => {
+      const res = await app.request('/api/secrets/huggingface/status');
+      // May fail without k8s, but should return valid response structure or 500
+      const status = res.status;
+      expect([200, 500]).toContain(status);
+      
+      if (status === 200) {
+        const data = await res.json();
+        expect(data.configured).toBeDefined();
+        expect(data.namespaces).toBeDefined();
+        expect(Array.isArray(data.namespaces)).toBe(true);
+      }
+    });
+
+    test('POST /api/secrets/huggingface validates required fields', async () => {
+      const res = await app.request('/api/secrets/huggingface', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    test('POST /api/secrets/huggingface validates access token is not empty', async () => {
+      const res = await app.request('/api/secrets/huggingface', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: '' }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    test('DELETE /api/secrets/huggingface route exists', async () => {
+      const res = await app.request('/api/secrets/huggingface', {
+        method: 'DELETE',
+      });
+      // May succeed or fail depending on k8s availability, but route should exist
+      expect([200, 500]).toContain(res.status);
+    });
+  });
 });

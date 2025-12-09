@@ -175,7 +175,7 @@ export function DeploymentDetailsPage() {
             <a href={generateAynaUrl({
               model: deployment.modelId,
               provider: 'openai',
-              endpoint: 'http://localhost:8000/v1',
+              endpoint: 'http://localhost:8000',
               type: 'chat',
             })}>
               <Button variant="outline">

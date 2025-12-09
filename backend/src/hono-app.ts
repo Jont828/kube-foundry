@@ -9,6 +9,8 @@ import { kubernetesService } from './services/kubernetes';
 import { configService } from './services/config';
 import { helmService } from './services/helm';
 import { authService } from './services/auth';
+import { huggingFaceService } from './services/huggingface';
+import { secretsService } from './services/secrets';
 import { providerRegistry, listProviderInfo } from './providers';
 import { validateGpuFit, formatGpuWarnings } from './services/gpuValidation';
 import models from './data/models.json';
@@ -62,6 +64,20 @@ const deploymentParamsSchema = z.object({
   name: resourceNameSchema,
 });
 
+const modelSearchQuerySchema = z.object({
+  q: z.string().min(2, 'Search query must be at least 2 characters'),
+  limit: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : 20))
+    .pipe(z.number().int().min(1).max(50)),
+  offset: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : 0))
+    .pipe(z.number().int().min(0)),
+});
+
 const updateSettingsSchema = z.object({
   activeProviderId: z.string().optional(),
   defaultNamespace: z.string().optional(),
@@ -69,6 +85,17 @@ const updateSettingsSchema = z.object({
 
 const providerIdParamsSchema = z.object({
   id: z.string().min(1),
+});
+
+// HuggingFace OAuth schemas
+const hfTokenExchangeSchema = z.object({
+  code: z.string().min(1, 'Authorization code is required'),
+  codeVerifier: z.string().min(43, 'Code verifier must be at least 43 characters'),
+  redirectUri: z.string().url('Redirect URI must be a valid URL'),
+});
+
+const hfSaveSecretSchema = z.object({
+  accessToken: z.string().min(1, 'Access token is required'),
 });
 
 // ============================================================================
@@ -119,6 +146,26 @@ const health = new Hono()
 const modelsRoute = new Hono()
   .get('/', (c) => {
     return c.json({ models: models.models });
+  })
+  .get('/search', zValidator('query', modelSearchQuerySchema), async (c) => {
+    const { q, limit, offset } = c.req.valid('query');
+    
+    // Extract HuggingFace token from Authorization header if present
+    const authHeader = c.req.header('Authorization');
+    const hfToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+    
+    try {
+      const results = await huggingFaceService.searchModels(
+        { query: q, limit, offset },
+        hfToken
+      );
+      return c.json(results);
+    } catch (error) {
+      logger.error({ error, query: q }, 'Model search failed');
+      throw new HTTPException(500, {
+        message: error instanceof Error ? error.message : 'Model search failed',
+      });
+    }
   })
   .get('/:id{.+}', (c) => {
     const modelId = c.req.param('id');
@@ -624,6 +671,107 @@ const installation = new Hono()
   );
 
 // ============================================================================
+// HuggingFace OAuth Routes
+// ============================================================================
+
+const oauth = new Hono()
+  .get('/huggingface/config', (c) => {
+    // Return OAuth config for frontend to construct auth URL
+    return c.json({
+      clientId: huggingFaceService.getClientId(),
+      authorizeUrl: 'https://huggingface.co/oauth/authorize',
+      scopes: ['openid', 'profile', 'read-repos'],
+    });
+  })
+  .post('/huggingface/token', zValidator('json', hfTokenExchangeSchema), async (c) => {
+    const { code, codeVerifier, redirectUri } = c.req.valid('json');
+
+    try {
+      const result = await huggingFaceService.handleOAuthCallback(code, codeVerifier, redirectUri);
+      return c.json(result);
+    } catch (error) {
+      logger.error({ error }, 'HuggingFace OAuth token exchange failed');
+      throw new HTTPException(400, {
+        message: error instanceof Error ? error.message : 'OAuth token exchange failed',
+      });
+    }
+  });
+
+// ============================================================================
+// Secrets Routes
+// ============================================================================
+
+const secrets = new Hono()
+  .get('/huggingface/status', async (c) => {
+    try {
+      const status = await secretsService.getHfSecretStatus();
+      return c.json(status);
+    } catch (error) {
+      logger.error({ error }, 'Failed to get HuggingFace secret status');
+      throw new HTTPException(500, {
+        message: error instanceof Error ? error.message : 'Failed to get secret status',
+      });
+    }
+  })
+  .post('/huggingface', zValidator('json', hfSaveSecretSchema), async (c) => {
+    const { accessToken } = c.req.valid('json');
+
+    try {
+      // Validate token first
+      const validation = await huggingFaceService.validateToken(accessToken);
+      if (!validation.valid) {
+        throw new HTTPException(400, {
+          message: `Invalid HuggingFace token: ${validation.error}`,
+        });
+      }
+
+      // Distribute secret to all namespaces
+      const result = await secretsService.distributeHfSecret(accessToken);
+
+      if (!result.success) {
+        const failedNamespaces = result.results
+          .filter((r) => !r.success)
+          .map((r) => `${r.namespace}: ${r.error}`)
+          .join(', ');
+        throw new HTTPException(500, {
+          message: `Failed to create secrets in some namespaces: ${failedNamespaces}`,
+        });
+      }
+
+      return c.json({
+        success: true,
+        message: 'HuggingFace token saved successfully',
+        user: validation.user,
+        results: result.results,
+      });
+    } catch (error) {
+      if (error instanceof HTTPException) throw error;
+      logger.error({ error }, 'Failed to save HuggingFace secret');
+      throw new HTTPException(500, {
+        message: error instanceof Error ? error.message : 'Failed to save secret',
+      });
+    }
+  })
+  .delete('/huggingface', async (c) => {
+    try {
+      const result = await secretsService.deleteHfSecrets();
+
+      return c.json({
+        success: result.success,
+        message: result.success
+          ? 'HuggingFace secrets deleted successfully'
+          : 'Some secrets could not be deleted',
+        results: result.results,
+      });
+    } catch (error) {
+      logger.error({ error }, 'Failed to delete HuggingFace secrets');
+      throw new HTTPException(500, {
+        message: error instanceof Error ? error.message : 'Failed to delete secrets',
+      });
+    }
+  });
+
+// ============================================================================
 // Main App
 // ============================================================================
 
@@ -655,6 +803,7 @@ const PUBLIC_ROUTES = [
   '/api/health',
   '/api/cluster/status',
   '/api/settings',  // Settings is public (read-only auth config needed by frontend)
+  '/api/oauth',     // OAuth routes must be public for initial authentication
 ];
 
 // Auth middleware for protected API routes
@@ -706,6 +855,8 @@ app.route('/api/models', modelsRoute);
 app.route('/api/settings', settings);
 app.route('/api/deployments', deployments);
 app.route('/api/installation', installation);
+app.route('/api/oauth', oauth);
+app.route('/api/secrets', secrets);
 
 // Static file serving middleware - uses Bun.file() for zero-copy serving
 app.use('*', async (c, next) => {

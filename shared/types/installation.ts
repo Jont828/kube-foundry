@@ -74,5 +74,6 @@ export interface ClusterGpuCapacity {
   allocatedGpus: number;
   availableGpus: number;
   maxContiguousAvailable: number;
+  totalMemoryGb?: number;         // Total GPU memory per GPU (e.g., 80 for A100 80GB)
   nodes: NodeGpuInfo[];
 }

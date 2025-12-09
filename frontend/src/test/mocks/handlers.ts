@@ -15,6 +15,7 @@ export const mockModels = [
     license: 'Apache 2.0',
     supportedEngines: ['vllm', 'sglang', 'trtllm'] as const,
     minGpuMemory: '4GB',
+    gated: false,
   },
   {
     id: 'meta-llama/Llama-3.2-1B-Instruct',
@@ -27,6 +28,7 @@ export const mockModels = [
     license: 'Meta Llama License',
     supportedEngines: ['vllm', 'sglang', 'trtllm'] as const,
     minGpuMemory: '8GB',
+    gated: true,
   },
 ]
 
@@ -263,6 +265,85 @@ export const handlers = [
     return HttpResponse.json({
       success: true,
       message: 'GPU Operator installed successfully',
+    })
+  }),
+
+  // HuggingFace OAuth API
+  http.get(`${API_BASE}/oauth/huggingface/config`, () => {
+    return HttpResponse.json({
+      clientId: 'test-client-id',
+      authorizeUrl: 'https://huggingface.co/oauth/authorize',
+      scopes: ['openid', 'profile', 'read-repos'],
+    })
+  }),
+
+  http.post(`${API_BASE}/oauth/huggingface/token`, async ({ request }) => {
+    const body = await request.json() as { code: string; codeVerifier: string; redirectUri: string }
+    if (!body.code || !body.codeVerifier || !body.redirectUri) {
+      return HttpResponse.json({ error: { message: 'Missing required fields' } }, { status: 400 })
+    }
+    return HttpResponse.json({
+      accessToken: 'hf_mock_token_123',
+      tokenType: 'Bearer',
+      expiresIn: 3600,
+      scope: 'openid profile read-repos',
+      user: {
+        id: 'user123',
+        name: 'testuser',
+        fullname: 'Test User',
+        email: 'test@example.com',
+        avatarUrl: 'https://huggingface.co/avatars/test.png',
+      },
+    })
+  }),
+
+  // HuggingFace Secrets API
+  http.get(`${API_BASE}/secrets/huggingface/status`, () => {
+    return HttpResponse.json({
+      configured: true,
+      namespaces: [
+        { name: 'dynamo-system', exists: true },
+        { name: 'kuberay-system', exists: true },
+        { name: 'default', exists: true },
+      ],
+      user: {
+        id: 'user123',
+        name: 'testuser',
+        fullname: 'Test User',
+      },
+    })
+  }),
+
+  http.post(`${API_BASE}/secrets/huggingface`, async ({ request }) => {
+    const body = await request.json() as { accessToken: string }
+    if (!body.accessToken) {
+      return HttpResponse.json({ error: { message: 'Access token is required' } }, { status: 400 })
+    }
+    return HttpResponse.json({
+      success: true,
+      message: 'HuggingFace token saved successfully',
+      user: {
+        id: 'user123',
+        name: 'testuser',
+        fullname: 'Test User',
+      },
+      results: [
+        { namespace: 'dynamo-system', success: true },
+        { namespace: 'kuberay-system', success: true },
+        { namespace: 'default', success: true },
+      ],
+    })
+  }),
+
+  http.delete(`${API_BASE}/secrets/huggingface`, () => {
+    return HttpResponse.json({
+      success: true,
+      message: 'HuggingFace secrets deleted successfully',
+      results: [
+        { namespace: 'dynamo-system', success: true },
+        { namespace: 'kuberay-system', success: true },
+        { namespace: 'default', success: true },
+      ],
     })
   }),
 ]

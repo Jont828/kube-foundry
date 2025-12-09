@@ -8,10 +8,11 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useCreateDeployment, type DeploymentConfig } from '@/hooks/useDeployments'
 import { useSettings } from '@/hooks/useSettings'
+import { useHuggingFaceStatus } from '@/hooks/useHuggingFace'
 import { useToast } from '@/hooks/useToast'
 import { generateDeploymentName } from '@/lib/utils'
 import { type Model } from '@/lib/api'
-import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, AlertCircle } from 'lucide-react'
 
 interface DeploymentFormProps {
   model: Model
@@ -26,6 +27,11 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
   const { toast } = useToast()
   const createDeployment = useCreateDeployment()
   const { data: settings } = useSettings()
+  const { data: hfStatus } = useHuggingFaceStatus()
+
+  // Check if this is a gated model and HF is not configured
+  const isGatedModel = model.gated === true
+  const needsHfAuth = isGatedModel && !hfStatus?.configured
 
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [config, setConfig] = useState<DeploymentConfig>({
@@ -87,6 +93,31 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Gated Model Warning */}
+      {needsHfAuth && (
+        <div className="rounded-lg bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="font-medium text-yellow-800 dark:text-yellow-200">
+                HuggingFace Authentication Required
+              </h3>
+              <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                <strong>{model.name}</strong> is a gated model that requires HuggingFace authentication.
+                Please{' '}
+                <a 
+                  href="/settings" 
+                  className="underline font-medium hover:text-yellow-900 dark:hover:text-yellow-100"
+                >
+                  sign in with HuggingFace
+                </a>{' '}
+                in Settings before deploying.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Basic Configuration */}
       <Card>
         <CardHeader>
@@ -119,20 +150,6 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
                 required
               />
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="hfTokenSecret">HuggingFace Token Secret</Label>
-            <Input
-              id="hfTokenSecret"
-              value={config.hfTokenSecret}
-              onChange={(e) => updateConfig('hfTokenSecret', e.target.value)}
-              placeholder="hf-token-secret"
-              required
-            />
-            <p className="text-xs text-muted-foreground">
-              Kubernetes secret containing HF_TOKEN
-            </p>
           </div>
         </CardContent>
       </Card>
@@ -392,7 +409,7 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
         </Button>
         <Button
           type="submit"
-          disabled={createDeployment.isPending}
+          disabled={createDeployment.isPending || needsHfAuth}
           className="flex-1"
         >
           {createDeployment.isPending ? (
@@ -400,6 +417,8 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Deploying...
             </>
+          ) : needsHfAuth ? (
+            'HuggingFace Auth Required'
           ) : (
             'Deploy Model'
           )}

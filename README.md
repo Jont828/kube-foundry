@@ -23,19 +23,42 @@ A web-based platform for deploying and managing large language models on Kuberne
 
 - Access to a Kubernetes cluster with kubectl configured
 - Helm CLI installed
-- GPU nodes with NVIDIA drivers (for Dynamo provider)
-- HuggingFace token for accessing gated models
+- GPU nodes with NVIDIA drivers (for GPU-accelerated inference)
+- HuggingFace account (for accessing gated models like Llama)
 
 ## Quick Start
 
-### 1. Create HuggingFace Token Secret
+### 1. Connect HuggingFace Account
+
+KubeFoundry supports automatic HuggingFace token setup via OAuth. Navigate to **Settings** and click **"Sign in with Hugging Face"** to securely connect your account. The token will be automatically distributed to all required namespaces.
+
+> **Note:** Both NVIDIA Dynamo and KubeRay providers require a HuggingFace token to access gated models.
+
+<details>
+<summary>Manual Token Setup (Alternative)</summary>
+
+If you prefer manual setup, create the secret in each provider's namespace:
 
 ```bash
+# For Dynamo
 kubectl create namespace dynamo-system
 kubectl create secret generic hf-token-secret \
   --from-literal=HF_TOKEN="your-token" \
   -n dynamo-system
+
+# For KubeRay
+kubectl create namespace kuberay-system
+kubectl create secret generic hf-token-secret \
+  --from-literal=HF_TOKEN="your-token" \
+  -n kuberay-system
+
+# For default namespace deployments
+kubectl create secret generic hf-token-secret \
+  --from-literal=HF_TOKEN="your-token" \
+  -n default
 ```
+
+</details>
 
 ### 2. Install a Provider
 
@@ -94,7 +117,8 @@ Settings are managed through the **Settings** page in the UI:
 
 - **Active Provider**: Select which inference provider to use
 - **Default Namespace**: Kubernetes namespace for deployments
-- **HuggingFace Secret**: Name of the Kubernetes secret containing your HF token
+- **HuggingFace Token**: Connect via OAuth or manually configure the K8s secret name
+- **GPU Operator**: Install NVIDIA GPU Operator for GPU support
 
 ## Authentication (Optional)
 

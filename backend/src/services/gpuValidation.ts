@@ -2,6 +2,63 @@ import type { DeploymentConfig } from '@kubefoundry/shared';
 import type { ClusterGpuCapacity } from './kubernetes';
 
 /**
+ * GPU memory estimation constants
+ * Based on FP16 inference: ~2 bytes per parameter + overhead
+ */
+const BYTES_PER_PARAM_FP16 = 2;
+const OVERHEAD_MULTIPLIER = 1.2; // 20% overhead for KV cache, activations, etc.
+const BYTES_PER_GB = 1024 * 1024 * 1024;
+
+/**
+ * Estimate GPU memory required for a model based on parameter count
+ * Returns estimated memory in GB
+ * 
+ * @param parameterCount - Number of parameters in the model
+ * @returns Estimated GPU memory in GB
+ */
+export function estimateGpuMemory(parameterCount: number): number {
+  const bytesRequired = parameterCount * BYTES_PER_PARAM_FP16 * OVERHEAD_MULTIPLIER;
+  const gbRequired = bytesRequired / BYTES_PER_GB;
+  // Round up to nearest GB
+  return Math.ceil(gbRequired);
+}
+
+/**
+ * Format GPU memory as a human-readable string
+ * 
+ * @param gpuMemoryGb - GPU memory in GB
+ * @returns Formatted string (e.g., "16GB")
+ */
+export function formatGpuMemory(gpuMemoryGb: number): string {
+  return `${gpuMemoryGb}GB`;
+}
+
+/**
+ * Parse GPU memory string to GB number
+ * 
+ * @param gpuMemoryStr - GPU memory string (e.g., "16GB", "8192MB")
+ * @returns GPU memory in GB, or undefined if invalid
+ */
+export function parseGpuMemory(gpuMemoryStr: string): number | undefined {
+  const match = gpuMemoryStr.match(/^(\d+(?:\.\d+)?)\s*(GB|MB|TB)?$/i);
+  if (!match) return undefined;
+  
+  const value = parseFloat(match[1]);
+  const unit = (match[2] || 'GB').toUpperCase();
+  
+  switch (unit) {
+    case 'TB':
+      return value * 1024;
+    case 'GB':
+      return value;
+    case 'MB':
+      return value / 1024;
+    default:
+      return value;
+  }
+}
+
+/**
  * Types of GPU fit warnings
  */
 export type GpuWarningType =

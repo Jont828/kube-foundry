@@ -61,6 +61,18 @@ export type {
   ClusterGpuCapacity,
 } from '@kubefoundry/shared';
 
+// HuggingFace types
+export type {
+  HfUserInfo,
+  HfTokenExchangeRequest,
+  HfTokenExchangeResponse,
+  HfSaveSecretRequest,
+  HfSecretStatus,
+  HfModelSearchResult,
+  HfModelSearchResponse,
+  HfSearchParams,
+} from '@kubefoundry/shared';
+
 // API response types
 export type {
   Pagination,
@@ -85,6 +97,12 @@ import type {
   ClusterGpuCapacity,
   DeploymentsListResponse,
   ClusterStatusResponse,
+  HfTokenExchangeRequest,
+  HfTokenExchangeResponse,
+  HfSaveSecretRequest,
+  HfSecretStatus,
+  HfUserInfo,
+  HfModelSearchResponse,
 } from '@kubefoundry/shared';
 
 // ============================================================================
@@ -255,4 +273,69 @@ export const gpuOperatorApi = {
     }),
 
   getCapacity: () => request<ClusterGpuCapacity>('/installation/gpu-capacity'),
+};
+
+// ============================================================================
+// HuggingFace OAuth API
+// ============================================================================
+
+export const huggingFaceApi = {
+  /** Get OAuth configuration (client ID, scopes) */
+  getOAuthConfig: () =>
+    request<{
+      clientId: string;
+      authorizeUrl: string;
+      scopes: string[];
+    }>('/oauth/huggingface/config'),
+
+  /** Exchange authorization code for access token */
+  exchangeToken: (data: HfTokenExchangeRequest) =>
+    request<HfTokenExchangeResponse>('/oauth/huggingface/token', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /** Get status of HuggingFace secret across namespaces */
+  getSecretStatus: () => request<HfSecretStatus>('/secrets/huggingface/status'),
+
+  /** Save HuggingFace token as K8s secrets */
+  saveSecret: (data: HfSaveSecretRequest) =>
+    request<{
+      success: boolean;
+      message: string;
+      user?: HfUserInfo;
+      results: { namespace: string; success: boolean; error?: string }[];
+    }>('/secrets/huggingface', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /** Delete HuggingFace secrets from all namespaces */
+  deleteSecret: () =>
+    request<{
+      success: boolean;
+      message: string;
+      results: { namespace: string; success: boolean; error?: string }[];
+    }>('/secrets/huggingface', {
+      method: 'DELETE',
+    }),
+
+  /** Search HuggingFace models with compatibility filtering */
+  searchModels: (query: string, options?: { limit?: number; offset?: number; hfToken?: string }) => {
+    const params = new URLSearchParams({
+      q: query,
+    });
+    if (options?.limit) params.set('limit', options.limit.toString());
+    if (options?.offset) params.set('offset', options.offset.toString());
+
+    // Build headers - include HF token if provided for gated model access
+    const headers: Record<string, string> = {};
+    if (options?.hfToken) {
+      headers['Authorization'] = `Bearer ${options.hfToken}`;
+    }
+
+    return request<HfModelSearchResponse>(`/models/search?${params.toString()}`, {
+      headers,
+    });
+  },
 };

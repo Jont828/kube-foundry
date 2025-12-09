@@ -3,6 +3,7 @@ import { useSettings, useUpdateSettings, useProviderDetails } from '@/hooks/useS
 import { useClusterStatus } from '@/hooks/useClusterStatus'
 import { useHelmStatus } from '@/hooks/useInstallation'
 import { useGpuOperatorStatus, useInstallGpuOperator } from '@/hooks/useGpuOperator'
+import { useHuggingFaceStatus, useHuggingFaceOAuth, useDeleteHuggingFaceSecret } from '@/hooks/useHuggingFace'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,19 +18,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/useToast'
-import { CheckCircle, XCircle, AlertCircle, Loader2, Server, Settings as SettingsIcon, Terminal, Cpu } from 'lucide-react'
+import { CheckCircle, XCircle, AlertCircle, Loader2, Server, Settings as SettingsIcon, Terminal, Cpu, Key } from 'lucide-react'
 
 export function SettingsPage() {
   const { data: settings, isLoading: settingsLoading } = useSettings()
   const { data: clusterStatus, isLoading: clusterLoading } = useClusterStatus()
   const { data: helmStatus } = useHelmStatus()
   const { data: gpuOperatorStatus, isLoading: gpuStatusLoading, refetch: refetchGpuStatus } = useGpuOperatorStatus()
+  const { data: hfStatus, isLoading: hfStatusLoading, refetch: refetchHfStatus } = useHuggingFaceStatus()
+  const { startOAuth } = useHuggingFaceOAuth()
+  const deleteHfSecret = useDeleteHuggingFaceSecret()
   const installGpuOperator = useInstallGpuOperator()
   const updateSettings = useUpdateSettings()
   const { toast } = useToast()
 
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
   const [isInstallingGpu, setIsInstallingGpu] = useState(false)
+  const [isConnectingHf, setIsConnectingHf] = useState(false)
   const activeProviderId = selectedProviderId || settings?.config.activeProviderId || 'dynamo'
 
   const { data: providerDetails } = useProviderDetails(activeProviderId)
@@ -336,6 +341,142 @@ export function SettingsPage() {
                         </Button>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* HuggingFace Token */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Key className="h-5 w-5" />
+            HuggingFace Token
+          </CardTitle>
+          <CardDescription>
+            Connect your HuggingFace account to access gated models like Llama
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {hfStatusLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Checking HuggingFace connection...</span>
+            </div>
+          ) : hfStatus?.configured && hfStatus.user ? (
+            // Connected state
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {hfStatus.user.avatarUrl && (
+                    <img
+                      src={hfStatus.user.avatarUrl}
+                      alt={hfStatus.user.name}
+                      className="h-10 w-10 rounded-full"
+                    />
+                  )}
+                  <div>
+                    <div className="font-medium">{hfStatus.user.fullname || hfStatus.user.name}</div>
+                    <div className="text-sm text-muted-foreground">@{hfStatus.user.name}</div>
+                  </div>
+                </div>
+                <Badge variant="default" className="bg-green-500">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Connected
+                </Badge>
+              </div>
+
+              <div className="rounded-lg bg-green-50 dark:bg-green-950 p-3 text-sm text-green-800 dark:text-green-200">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  <span>Token saved in {hfStatus.namespaces.filter(n => n.exists).length} namespace(s)</span>
+                </div>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await deleteHfSecret.mutateAsync()
+                    toast({
+                      title: 'Disconnected',
+                      description: 'HuggingFace token has been removed',
+                    })
+                    refetchHfStatus()
+                  } catch (error) {
+                    toast({
+                      title: 'Error',
+                      description: error instanceof Error ? error.message : 'Failed to disconnect',
+                      variant: 'destructive',
+                    })
+                  }
+                }}
+                disabled={deleteHfSecret.isPending}
+              >
+                {deleteHfSecret.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Disconnecting...
+                  </>
+                ) : (
+                  'Disconnect HuggingFace'
+                )}
+              </Button>
+            </div>
+          ) : (
+            // Not connected state
+            <div className="space-y-4">
+              <div className="text-sm text-muted-foreground">
+                Sign in with HuggingFace to automatically configure your token for accessing gated models.
+                The token will be securely stored as a Kubernetes secret.
+              </div>
+
+              <Button
+                onClick={async () => {
+                  setIsConnectingHf(true)
+                  try {
+                    await startOAuth()
+                  } catch (error) {
+                    toast({
+                      title: 'Error',
+                      description: error instanceof Error ? error.message : 'Failed to start OAuth',
+                      variant: 'destructive',
+                    })
+                    setIsConnectingHf(false)
+                  }
+                }}
+                disabled={isConnectingHf}
+                className="bg-[#FFD21E] hover:bg-[#FFD21E]/90 text-black"
+              >
+                {isConnectingHf ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Redirecting...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-5 w-5 mr-2" viewBox="0 0 95 88" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M47.2119 76.5C54.4518 76.5 60.7119 70.24 60.7119 63V50.5H47.2119C39.9719 50.5 33.7119 56.76 33.7119 64C33.7119 70.9 39.6319 76.5 47.2119 76.5Z" fill="currentColor"/>
+                      <path d="M47.2119 88C61.5765 88 73.2119 76.3645 73.2119 62C73.2119 47.6355 61.5765 36 47.2119 36C32.8474 36 21.2119 47.6355 21.2119 62C21.2119 76.3645 32.8474 88 47.2119 88Z" fill="currentColor"/>
+                      <ellipse cx="35.7119" cy="30" rx="12" ry="12" fill="currentColor"/>
+                      <ellipse cx="59.7119" cy="30" rx="12" ry="12" fill="currentColor"/>
+                      <ellipse cx="35.7119" cy="30" rx="5" ry="5" fill="white"/>
+                      <ellipse cx="59.7119" cy="30" rx="5" ry="5" fill="white"/>
+                    </svg>
+                    Sign in with Hugging Face
+                  </>
+                )}
+              </Button>
+
+              {hfStatus?.configured && !hfStatus.user && (
+                <div className="rounded-lg bg-yellow-50 dark:bg-yellow-950 p-3 text-sm text-yellow-800 dark:text-yellow-200">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>Token exists but could not be validated. Try reconnecting.</span>
                   </div>
                 </div>
               )}

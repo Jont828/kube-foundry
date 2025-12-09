@@ -7,6 +7,7 @@ import { DeploymentDetailsPage } from './pages/DeploymentDetailsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { InstallationPage } from './pages/InstallationPage'
 import { LoginPage } from './pages/LoginPage'
+import { HuggingFaceCallbackPage } from './pages/HuggingFaceCallbackPage'
 import { Toaster } from './components/ui/toaster'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { useAuth } from './hooks/useAuth'
@@ -49,6 +50,9 @@ function AppRoutes() {
     <Routes>
       {/* Login page - always accessible */}
       <Route path="/login" element={<LoginPage />} />
+      
+      {/* OAuth callback - always accessible (handles auth flow) */}
+      <Route path="/oauth/callback/huggingface" element={<HuggingFaceCallbackPage />} />
       
       {/* Protected routes */}
       <Route

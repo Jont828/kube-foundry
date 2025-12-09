@@ -46,6 +46,7 @@ export interface ClusterGpuCapacity {
   allocatedGpus: number;          // Sum of GPU requests from all pods
   availableGpus: number;          // totalGpus - allocatedGpus
   maxContiguousAvailable: number; // Highest available GPUs on any single node
+  totalMemoryGb?: number;         // Total GPU memory per GPU (e.g., 80 for A100 80GB)
   nodes: NodeGpuInfo[];           // Per-node breakdown
 }
 
@@ -376,6 +377,7 @@ class KubernetesService {
       );
 
       const nodeGpuMap = new Map<string, { total: number; allocated: number }>();
+      let detectedGpuMemoryGb: number | undefined;
 
       for (const node of nodesResponse.body.items) {
         const nodeName = node.metadata?.name || 'unknown';
@@ -384,6 +386,26 @@ class KubernetesService {
           const gpuCount = parseInt(gpuCapacity, 10);
           if (gpuCount > 0) {
             nodeGpuMap.set(nodeName, { total: gpuCount, allocated: 0 });
+            
+            // Try to detect GPU memory from node labels (prefer nvidia.com/gpu.memory)
+            if (!detectedGpuMemoryGb) {
+              // Primary: Use nvidia.com/gpu.memory label (value in MiB from GPU Feature Discovery)
+              const gpuMemoryMib = node.metadata?.labels?.['nvidia.com/gpu.memory'];
+              if (gpuMemoryMib) {
+                const memoryMib = parseInt(gpuMemoryMib, 10);
+                if (!isNaN(memoryMib) && memoryMib > 0) {
+                  detectedGpuMemoryGb = Math.round(memoryMib / 1024); // Convert MiB to GB
+                }
+              }
+              
+              // Fallback: Detect from nvidia.com/gpu.product label
+              if (!detectedGpuMemoryGb) {
+                const gpuProduct = node.metadata?.labels?.['nvidia.com/gpu.product'];
+                if (gpuProduct) {
+                  detectedGpuMemoryGb = this.detectGpuMemoryFromProduct(gpuProduct);
+                }
+              }
+            }
           }
         }
       }
@@ -452,6 +474,7 @@ class KubernetesService {
         allocatedGpus,
         availableGpus: totalGpus - allocatedGpus,
         maxContiguousAvailable,
+        totalMemoryGb: detectedGpuMemoryGb,
         nodes,
       };
     } catch (error) {
@@ -464,6 +487,39 @@ class KubernetesService {
         nodes: [],
       };
     }
+  }
+
+  /**
+   * Detect GPU memory from NVIDIA GPU product name
+   * This is a best-effort mapping based on common GPU models
+   */
+  private detectGpuMemoryFromProduct(gpuProduct: string): number | undefined {
+    const product = gpuProduct.toLowerCase();
+    
+    // NVIDIA Data Center GPUs
+    if (product.includes('a100') && product.includes('80')) return 80;
+    if (product.includes('a100') && product.includes('40')) return 40;
+    if (product.includes('a100')) return 40; // Default A100 is 40GB
+    if (product.includes('h100') && product.includes('80')) return 80;
+    if (product.includes('h100')) return 80;
+    if (product.includes('h200')) return 141;
+    if (product.includes('a10g')) return 24;
+    if (product.includes('a10')) return 24;
+    if (product.includes('l40s')) return 48;
+    if (product.includes('l40')) return 48;
+    if (product.includes('l4')) return 24;
+    if (product.includes('t4')) return 16;
+    if (product.includes('v100') && product.includes('32')) return 32;
+    if (product.includes('v100')) return 16;
+    
+    // NVIDIA Consumer GPUs
+    if (product.includes('4090')) return 24;
+    if (product.includes('4080')) return 16;
+    if (product.includes('3090')) return 24;
+    if (product.includes('3080') && product.includes('12')) return 12;
+    if (product.includes('3080')) return 10;
+    
+    return undefined;
   }
 }
 

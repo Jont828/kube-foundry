@@ -1,25 +1,39 @@
-import { useParams, useNavigate } from 'react-router-dom'
-import { useModel } from '@/hooks/useModels'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useModel, useHfModel } from '@/hooks/useModels'
 import { useGpuCapacity } from '@/hooks/useGpuOperator'
 import { DeploymentForm } from '@/components/deployments/DeploymentForm'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Loader2, ArrowLeft, Cpu, HardDrive, Layers, AlertTriangle } from 'lucide-react'
+import { Loader2, ArrowLeft, Cpu, HardDrive, Layers, AlertTriangle, ExternalLink } from 'lucide-react'
+import { GpuFitIndicator } from '@/components/models/GpuFitIndicator'
 
 export function DeployPage() {
   const { modelId } = useParams<{ modelId: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const decodedModelId = modelId ? decodeURIComponent(modelId) : undefined
-  const { data: model, isLoading, error } = useModel(decodedModelId)
+  const isHfSource = searchParams.get('source') === 'hf'
+  
+  // Use appropriate hook based on source
+  const localModelQuery = useModel(isHfSource ? undefined : decodedModelId)
+  const hfModelQuery = useHfModel(isHfSource ? decodedModelId : undefined)
+  
+  const { data: model, isLoading, error } = isHfSource ? hfModelQuery : localModelQuery
   const { data: gpuCapacity } = useGpuCapacity()
 
-  // Calculate if model fits in cluster
+  // Calculate if model fits in cluster (GPU count based)
   const modelMinGpus = model?.minGpus ?? 1
-  const hasGpuWarning = gpuCapacity && (
+  const hasGpuCountWarning = gpuCapacity && (
     gpuCapacity.availableGpus < modelMinGpus ||
     gpuCapacity.maxContiguousAvailable < modelMinGpus
   )
+  
+  // Calculate GPU memory warning for HF models
+  const estimatedGpuGb = model?.estimatedGpuMemoryGb
+  const gpuMemoryGb = gpuCapacity?.totalMemoryGb
+  const hasGpuMemoryWarning = estimatedGpuGb && gpuMemoryGb && estimatedGpuGb > gpuMemoryGb
+  const hasGpuWarning = hasGpuCountWarning || hasGpuMemoryWarning
 
   if (isLoading) {
     return (
@@ -64,8 +78,25 @@ export function DeployPage() {
         <CardHeader>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <CardTitle>{model.name}</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>{model.name}</CardTitle>
+                {model.fromHfSearch && (
+                  <a
+                    href={`https://huggingface.co/${model.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                )}
+              </div>
               <CardDescription>{model.id}</CardDescription>
+              {model.gated && (
+                <Badge variant="outline" className="mt-2 text-yellow-600 border-yellow-500">
+                  Gated Model
+                </Badge>
+              )}
             </div>
             <Badge variant="outline" className="text-lg px-3 py-1">
               {model.size}
@@ -78,7 +109,19 @@ export function DeployPage() {
           <div className="flex flex-wrap gap-4 text-sm">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Cpu className="h-4 w-4" />
-              <span>GPU: {model.minGpuMemory || 'N/A'}</span>
+              {model.estimatedGpuMemory ? (
+                  <div className="flex items-center gap-2">
+                    <span>GPU: ~{model.estimatedGpuMemory}</span>
+                    {gpuCapacity?.totalMemoryGb && model.estimatedGpuMemoryGb && (
+                      <GpuFitIndicator
+                        estimatedGpuMemoryGb={model.estimatedGpuMemoryGb}
+                        clusterCapacityGb={gpuCapacity.totalMemoryGb}
+                      />
+                    )}
+                  </div>
+              ) : (
+                <span>GPU: {model.minGpuMemory || 'N/A'}</span>
+              )}
             </div>
 
             {model.contextLength && (
@@ -115,18 +158,27 @@ export function DeployPage() {
                   GPU Capacity Warning
                 </p>
                 <div className="text-sm text-yellow-700 dark:text-yellow-300 space-y-1">
-                  {gpuCapacity.availableGpus < modelMinGpus && (
+                  {/* Memory-based warning for HF models */}
+                  {hasGpuMemoryWarning && estimatedGpuGb && gpuMemoryGb && (
+                    <p>
+                      This model requires approximately {estimatedGpuGb.toFixed(1)} GB of GPU memory, 
+                      but the cluster only has {gpuMemoryGb.toFixed(1)} GB available per GPU.
+                    </p>
+                  )}
+                  {/* GPU count warnings */}
+                  {hasGpuCountWarning && gpuCapacity.availableGpus < modelMinGpus && (
                     <p>
                       This model requires at least {modelMinGpus} GPU(s) but only {gpuCapacity.availableGpus} are available in the cluster.
                     </p>
                   )}
-                  {gpuCapacity.maxContiguousAvailable < modelMinGpus && gpuCapacity.availableGpus >= modelMinGpus && (
+                  {hasGpuCountWarning && gpuCapacity.maxContiguousAvailable < modelMinGpus && gpuCapacity.availableGpus >= modelMinGpus && (
                     <p>
                       This model requires {modelMinGpus} GPU(s) on a single node, but the largest available block is {gpuCapacity.maxContiguousAvailable} GPU(s).
                     </p>
                   )}
                   <p className="text-xs mt-2">
                     Cluster: {gpuCapacity.availableGpus}/{gpuCapacity.totalGpus} GPUs available • Max contiguous: {gpuCapacity.maxContiguousAvailable}
+                    {gpuMemoryGb && ` • ${gpuMemoryGb.toFixed(1)} GB per GPU`}
                   </p>
                 </div>
               </div>

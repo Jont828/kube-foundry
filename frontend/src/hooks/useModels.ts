@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { modelsApi, type Model } from '@/lib/api'
+import { modelsApi, huggingFaceApi, type Model, type HfModelSearchResult } from '@/lib/api'
+import { getHfAccessToken } from './useHuggingFace'
 
 // Fallback static models for when API is unavailable
 const fallbackModels: Model[] = [
@@ -123,4 +124,66 @@ export function useModel(id: string | undefined) {
     },
     enabled: !!id,
   })
+}
+
+/**
+ * Convert HF search result to Model type for deployment form
+ */
+export function hfModelToModel(hfModel: HfModelSearchResult): Model {
+  // Convert parameter count to human-readable size
+  let size = 'Unknown';
+  if (hfModel.parameterCount) {
+    const billions = hfModel.parameterCount / 1_000_000_000;
+    if (billions >= 1) {
+      size = `${billions.toFixed(1)}B`;
+    } else {
+      const millions = hfModel.parameterCount / 1_000_000;
+      size = `${millions.toFixed(0)}M`;
+    }
+  }
+
+  return {
+    id: hfModel.id,
+    name: hfModel.name,
+    description: `${hfModel.author}/${hfModel.name} - ${hfModel.pipelineTag}`,
+    size,
+    task: hfModel.pipelineTag === 'text-generation' ? 'text-generation' : 'chat',
+    supportedEngines: hfModel.supportedEngines,
+    minGpuMemory: hfModel.estimatedGpuMemory,
+    gated: hfModel.gated,
+    // Extended fields from HF
+    estimatedGpuMemory: hfModel.estimatedGpuMemory,
+    estimatedGpuMemoryGb: hfModel.estimatedGpuMemoryGb,
+    parameterCount: hfModel.parameterCount,
+    fromHfSearch: true,
+  };
+}
+
+/**
+ * Hook to get a model from HuggingFace search
+ * Used when deploying a model that came from HF search
+ */
+export function useHfModel(id: string | undefined) {
+  const hfToken = getHfAccessToken();
+
+  return useQuery({
+    queryKey: ['hf-model', id],
+    queryFn: async (): Promise<Model | null> => {
+      if (!id) return null;
+
+      // Search for the exact model ID
+      const result = await huggingFaceApi.searchModels(id, {
+        limit: 5,
+        hfToken: hfToken ?? undefined,
+      });
+
+      // Find exact match
+      const hfModel = result.models.find(m => m.id === id);
+      if (!hfModel) return null;
+
+      return hfModelToModel(hfModel);
+    },
+    enabled: !!id,
+    staleTime: 60000, // 60 seconds
+  });
 }

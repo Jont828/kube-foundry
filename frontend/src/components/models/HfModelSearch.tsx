@@ -1,0 +1,158 @@
+import { useState } from 'react';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { HfModelCard } from './HfModelCard';
+import { useHfModelSearch, useHuggingFaceStatus } from '@/hooks/useHuggingFace';
+import { useDebounce } from '@/hooks/useDebounce';
+import { useGpuCapacity } from '@/hooks/useGpuOperator';
+import { Search, Loader2, AlertCircle, LogIn } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+
+interface HfModelSearchProps {
+  onLoginClick?: () => void;
+  gpuCapacityGb?: number;
+}
+
+export function HfModelSearch({ onLoginClick, gpuCapacityGb }: HfModelSearchProps) {
+  const [query, setQuery] = useState('');
+  const [offset, setOffset] = useState(0);
+  const limit = 20;
+
+  const debouncedQuery = useDebounce(query, 500);
+  
+  const { data: searchResults, isLoading, error, isFetching } = useHfModelSearch(
+    debouncedQuery,
+    { limit, offset }
+  );
+
+  const { data: hfStatus } = useHuggingFaceStatus();
+  const { data: gpuCapacity } = useGpuCapacity();
+
+  // Use provided GPU capacity or estimate from cluster
+  const maxGpuMemoryGb = gpuCapacityGb ?? gpuCapacity?.totalMemoryGb;
+
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setQuery(e.target.value);
+    setOffset(0); // Reset pagination on new search
+  };
+
+  const handleLoadMore = () => {
+    setOffset((prev) => prev + limit);
+  };
+
+  const isLoggedIn = hfStatus?.configured;
+  const showLoginPrompt = !isLoggedIn && query.length >= 2;
+
+  return (
+    <div className="space-y-4">
+      {/* Search input */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          type="text"
+          placeholder="Search HuggingFace models (e.g., llama, mistral, qwen)..."
+          value={query}
+          onChange={handleSearch}
+          className="pl-10"
+        />
+        {isFetching && (
+          <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+        )}
+      </div>
+
+      {/* Login prompt for gated models */}
+      {showLoginPrompt && (
+        <Alert>
+          <LogIn className="h-4 w-4" />
+          <AlertDescription className="flex items-center justify-between">
+            <span>Log in with HuggingFace to access gated models like Llama and Mistral.</span>
+            {onLoginClick && (
+              <Button variant="outline" size="sm" onClick={onLoginClick} className="ml-2">
+                Login
+              </Button>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            {error instanceof Error ? error.message : 'Failed to search models'}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Empty state */}
+      {query.length < 2 && (
+        <div className="text-center py-12 text-muted-foreground">
+          <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
+          <p>Enter at least 2 characters to search HuggingFace models</p>
+          <p className="text-sm mt-2">
+            Only models compatible with vLLM, SGLang, or TensorRT-LLM will be shown
+          </p>
+        </div>
+      )}
+
+      {/* Loading state for initial search */}
+      {isLoading && query.length >= 2 && (
+        <div className="text-center py-12">
+          <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
+          <p className="mt-4 text-muted-foreground">Searching compatible models...</p>
+        </div>
+      )}
+
+      {/* No results */}
+      {searchResults && searchResults.models.length === 0 && !isLoading && (
+        <div className="text-center py-12 text-muted-foreground">
+          <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+          <p>No compatible models found for "{debouncedQuery}"</p>
+          <p className="text-sm mt-2">
+            Try a different search term or check if the model architecture is supported
+          </p>
+        </div>
+      )}
+
+      {/* Results grid */}
+      {searchResults && searchResults.models.length > 0 && (
+        <>
+          <div className="text-sm text-muted-foreground">
+            Showing {searchResults.models.length} of {searchResults.total} compatible models
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {searchResults.models.map((model) => (
+              <HfModelCard 
+                key={model.id} 
+                model={model} 
+                gpuCapacityGb={maxGpuMemoryGb}
+              />
+            ))}
+          </div>
+
+          {/* Load more button */}
+          {searchResults.hasMore && (
+            <div className="flex justify-center pt-4">
+              <Button 
+                variant="outline" 
+                onClick={handleLoadMore}
+                disabled={isFetching}
+              >
+                {isFetching ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  'Load More'
+                )}
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

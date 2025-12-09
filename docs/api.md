@@ -188,11 +188,35 @@ Get the curated model catalog.
       "task": "text-generation",
       "contextLength": 32768,
       "supportedEngines": ["vllm", "sglang", "trtllm"],
-      "minGpuMemory": "4GB"
+      "minGpuMemory": "4GB",
+      "gated": false
+    },
+    {
+      "id": "meta-llama/Llama-3.2-1B-Instruct",
+      "name": "Llama 3.2 1B Instruct",
+      "description": "Compact Llama model optimized for instruction following",
+      "size": "1B",
+      "task": "chat",
+      "contextLength": 131072,
+      "supportedEngines": ["vllm", "sglang", "trtllm"],
+      "minGpuMemory": "4GB",
+      "gated": true
     }
   ]
 }
 ```
+
+**Model Fields:**
+- `id` - HuggingFace model ID (e.g., "Qwen/Qwen3-0.6B")
+- `name` - Display name
+- `description` - Brief description
+- `size` - Parameter count (e.g., "0.6B")
+- `task` - Model task type ("text-generation", "chat", "fill-mask")
+- `contextLength` - Maximum context length
+- `supportedEngines` - Compatible inference engines
+- `minGpuMemory` - Minimum GPU memory required
+- `minGpus` - Minimum number of GPUs required (default: 1)
+- `gated` - Whether model requires HuggingFace authentication (true for Llama, Mistral, etc.)
 
 ## Deployments
 
@@ -284,6 +308,119 @@ Delete a deployment.
 {
   "success": true,
   "message": "Deployment deleted"
+}
+```
+
+## HuggingFace OAuth
+
+KubeFoundry supports HuggingFace OAuth with PKCE for secure token acquisition. This enables access to gated models (e.g., Llama, Mistral) without manually managing tokens.
+
+### GET /oauth/huggingface/config
+Get OAuth configuration for initiating HuggingFace sign-in.
+
+**Response:**
+```json
+{
+  "clientId": "e05817a1-7053-4b9e-b292-29cd219fccf8",
+  "authorizeUrl": "https://huggingface.co/oauth/authorize",
+  "scopes": ["openid", "profile", "read-repos"]
+}
+```
+
+### POST /oauth/huggingface/token
+Exchange OAuth authorization code for access token using PKCE.
+
+**Request Body:**
+```json
+{
+  "code": "authorization_code_from_callback",
+  "codeVerifier": "pkce_code_verifier_min_43_chars",
+  "redirectUri": "http://localhost:3000/oauth/callback/huggingface"
+}
+```
+
+**Response:**
+```json
+{
+  "accessToken": "hf_xxxxx",
+  "tokenType": "Bearer",
+  "expiresIn": 3600,
+  "scope": "openid profile read-repos",
+  "user": {
+    "id": "user123",
+    "name": "username",
+    "fullname": "Full Name",
+    "email": "user@example.com",
+    "avatarUrl": "https://huggingface.co/avatars/xxx.png"
+  }
+}
+```
+
+## HuggingFace Secrets
+
+Manages HuggingFace tokens as Kubernetes secrets across provider namespaces.
+
+### GET /secrets/huggingface/status
+Get the status of HuggingFace token secrets across namespaces.
+
+**Response:**
+```json
+{
+  "configured": true,
+  "namespaces": [
+    { "name": "dynamo-system", "exists": true },
+    { "name": "kuberay-system", "exists": true },
+    { "name": "default", "exists": true }
+  ],
+  "user": {
+    "id": "user123",
+    "name": "username",
+    "fullname": "Full Name"
+  }
+}
+```
+
+### POST /secrets/huggingface
+Save HuggingFace access token as Kubernetes secrets in all required namespaces.
+
+**Request Body:**
+```json
+{
+  "accessToken": "hf_xxxxx"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "HuggingFace token saved successfully",
+  "user": {
+    "id": "user123",
+    "name": "username",
+    "fullname": "Full Name"
+  },
+  "results": [
+    { "namespace": "dynamo-system", "success": true },
+    { "namespace": "kuberay-system", "success": true },
+    { "namespace": "default", "success": true }
+  ]
+}
+```
+
+### DELETE /secrets/huggingface
+Delete HuggingFace token secrets from all namespaces.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "HuggingFace secrets deleted successfully",
+  "results": [
+    { "namespace": "dynamo-system", "success": true },
+    { "namespace": "kuberay-system", "success": true },
+    { "namespace": "default", "success": true }
+  ]
 }
 ```
 

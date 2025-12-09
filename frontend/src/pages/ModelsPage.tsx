@@ -1,15 +1,21 @@
 import { useState, useMemo } from 'react'
 import { useModels } from '@/hooks/useModels'
+import { useGpuCapacity } from '@/hooks/useGpuOperator'
 import { ModelGrid } from '@/components/models/ModelGrid'
 import { ModelSearch } from '@/components/models/ModelSearch'
-import { Loader2 } from 'lucide-react'
+import { HfModelSearch } from '@/components/models/HfModelSearch'
+import { Loader2, BookMarked, Search } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 type Engine = 'vllm' | 'sglang' | 'trtllm'
+type Tab = 'curated' | 'huggingface'
 
 export function ModelsPage() {
   const { data: models, isLoading, error } = useModels()
+  const { data: gpuCapacity } = useGpuCapacity()
   const [search, setSearch] = useState('')
   const [selectedEngines, setSelectedEngines] = useState<Engine[]>([])
+  const [activeTab, setActiveTab] = useState<Tab>('curated')
 
   const filteredModels = useMemo(() => {
     if (!models) return []
@@ -37,7 +43,7 @@ export function ModelsPage() {
     )
   }
 
-  if (isLoading) {
+  if (isLoading && activeTab === 'curated') {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -45,7 +51,7 @@ export function ModelsPage() {
     )
   }
 
-  if (error) {
+  if (error && activeTab === 'curated') {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <p className="text-lg font-medium text-destructive">
@@ -67,14 +73,51 @@ export function ModelsPage() {
         </p>
       </div>
 
-      <ModelSearch
-        search={search}
-        onSearchChange={setSearch}
-        selectedEngines={selectedEngines}
-        onEngineToggle={handleEngineToggle}
-      />
+      {/* Tab navigation */}
+      <div className="flex gap-1 border-b">
+        <button
+          onClick={() => setActiveTab('curated')}
+          className={cn(
+            'flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            activeTab === 'curated'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <BookMarked className="h-4 w-4" />
+          Curated Models
+        </button>
+        <button
+          onClick={() => setActiveTab('huggingface')}
+          className={cn(
+            'flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            activeTab === 'huggingface'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Search className="h-4 w-4" />
+          Search HuggingFace
+        </button>
+      </div>
 
-      <ModelGrid models={filteredModels} />
+      {/* Curated models tab */}
+      {activeTab === 'curated' && (
+        <>
+          <ModelSearch
+            search={search}
+            onSearchChange={setSearch}
+            selectedEngines={selectedEngines}
+            onEngineToggle={handleEngineToggle}
+          />
+          <ModelGrid models={filteredModels} />
+        </>
+      )}
+
+      {/* HuggingFace search tab */}
+      {activeTab === 'huggingface' && (
+        <HfModelSearch gpuCapacityGb={gpuCapacity?.totalMemoryGb} />
+      )}
     </div>
   )
 }
