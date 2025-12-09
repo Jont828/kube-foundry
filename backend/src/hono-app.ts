@@ -16,10 +16,11 @@ import logger from './lib/logger';
 import {
   isCompiled,
   loadStaticFiles,
-  getStaticFile,
-  getIndexHtml,
+  getStaticFileResponse,
+  getIndexHtmlResponse,
   hasStaticFiles,
 } from './static';
+import { BUILD_INFO } from './build-info';
 import {
   namespaceSchema,
   resourceNameSchema,
@@ -80,6 +81,9 @@ const health = new Hono()
       status: 'healthy',
       timestamp: new Date().toISOString(),
     });
+  })
+  .get('/version', (c) => {
+    return c.json(BUILD_INFO);
   })
   .get('/status', async (c) => {
     const clusterStatus = await kubernetesService.checkClusterConnection();
@@ -703,16 +707,16 @@ app.route('/api/settings', settings);
 app.route('/api/deployments', deployments);
 app.route('/api/installation', installation);
 
-// Static file serving middleware
+// Static file serving middleware - uses Bun.file() for zero-copy serving
 app.use('*', async (c, next) => {
   if (c.req.path.startsWith('/api/')) {
     return next();
   }
 
   if (hasStaticFiles()) {
-    const file = getStaticFile(c.req.path);
-    if (file) {
-      return c.body(file.content, 200, { 'Content-Type': file.contentType });
+    const response = getStaticFileResponse(c.req.path);
+    if (response) {
+      return response;
     }
   }
 
@@ -733,11 +737,11 @@ app.notFound((c) => {
     );
   }
 
-  // Serve index.html for SPA routing
+  // Serve index.html for SPA routing - uses Bun.file() for zero-copy serving
   if (hasStaticFiles()) {
-    const indexHtml = getIndexHtml();
-    if (indexHtml) {
-      return c.body(indexHtml.content, 200, { 'Content-Type': indexHtml.contentType });
+    const response = getIndexHtmlResponse();
+    if (response) {
+      return response;
     }
   }
 

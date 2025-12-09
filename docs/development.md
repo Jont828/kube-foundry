@@ -30,14 +30,40 @@ bun run compile
 
 # Run the binary (serves both API and frontend on port 3001)
 ./dist/kubefoundry
+
+# Check version info
+curl http://localhost:3001/api/health/version
 ```
 
 The compile process:
 1. Builds the frontend with Vite
-2. Embeds frontend assets as base64 in `backend/src/embedded-assets.ts`
-3. Compiles everything into a single ~63MB executable using `bun build --compile`
+2. Generates native Bun file imports in `backend/src/embedded-assets.ts`
+3. Injects build-time constants (version, git commit, build time) via `--define`
+4. Compiles everything into a single executable using `bun build --compile --minify --sourcemap`
 
-The binary is completely self-contained - no additional files needed. The backend uses Hono on Bun for optimal performance.
+The binary is completely self-contained with zero-copy file serving. The backend uses Hono on Bun for optimal performance.
+
+### Cross-Compilation
+
+Build for multiple platforms:
+
+```bash
+# Build for all platforms
+make compile-all
+
+# Or individual targets
+make compile-linux     # linux-x64, linux-arm64
+make compile-darwin    # darwin-x64, darwin-arm64
+make compile-windows   # windows-x64
+
+# With explicit version
+VERSION=v1.0.0 bun run compile
+```
+
+Supported targets:
+- `linux-x64`, `linux-arm64`
+- `darwin-x64`, `darwin-arm64`
+- `windows-x64`
 
 ## Environment Variables
 

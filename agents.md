@@ -23,6 +23,7 @@ bun install              # Install dependencies
 bun run dev              # Start dev servers (frontend + backend)
 bun run test             # Run all tests (frontend + backend)
 make compile             # Build single binary to dist/
+make compile-all         # Cross-compile for all platforms
 ```
 
 **Always run `bun run test` after implementing functionality to verify both frontend and backend changes.**
@@ -47,3 +48,6 @@ Read these files **only when relevant** to your task:
 - Provider registry: `backend/src/providers/index.ts`
 - Kubernetes client: `backend/src/services/kubernetes.ts`
 - Frontend API client: `frontend/src/lib/api.ts`
+- Build-time constants: `backend/src/build-info.ts`
+- Compile script: `backend/scripts/compile.ts`
+- Asset embedding: `backend/scripts/embed-assets.ts`

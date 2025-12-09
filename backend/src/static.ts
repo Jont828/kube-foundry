@@ -3,9 +3,10 @@ import fs from 'fs';
 import logger from './lib/logger';
 
 // Static file serving for compiled binary and development mode
+// Uses Bun's native file embedding for zero-copy serving in compiled mode
 
 interface StaticFile {
-  content: Buffer;
+  path: string;          // File path (filesystem or $bunfs internal path)
   contentType: string;
 }
 
@@ -47,7 +48,7 @@ async function loadEmbeddedAssets(): Promise<boolean> {
     
     for (const [urlPath, asset] of Object.entries(EMBEDDED_ASSETS)) {
       staticFiles.set(urlPath, {
-        content: Buffer.from(asset.content, 'base64'),
+        path: asset.path,
         contentType: asset.contentType,
       });
     }
@@ -90,9 +91,8 @@ async function loadFilesFromDir(baseDir: string, prefix: string): Promise<void> 
     if (entry.isDirectory()) {
       await loadFilesFromDir(fullPath, urlPath);
     } else {
-      const content = fs.readFileSync(fullPath);
       staticFiles.set(urlPath, {
-        content,
+        path: fullPath,
         contentType: getMimeType(entry.name),
       });
     }
@@ -110,16 +110,37 @@ export const loadStaticFiles = async (): Promise<void> => {
   await loadFilesFromDisk();
 };
 
-// Get a file by path
-export const getStaticFile = (urlPath: string): StaticFile | undefined => {
-  // Normalize path
+// Get a file Response by path - uses Bun.file() for zero-copy serving
+export const getStaticFileResponse = (urlPath: string): Response | undefined => {
   const normalizedPath = urlPath.startsWith('/') ? urlPath : `/${urlPath}`;
-  return staticFiles.get(normalizedPath);
+  const file = staticFiles.get(normalizedPath);
+  
+  if (!file) {
+    return undefined;
+  }
+  
+  try {
+    // Use Bun.file() for zero-copy file serving
+    // This works for both filesystem paths and $bunfs internal paths
+    const bunFile = Bun.file(file.path);
+    
+    // Check if file exists (handles test environment and missing files)
+    if (bunFile.size === 0 && !fs.existsSync(file.path)) {
+      return undefined;
+    }
+    
+    return new Response(bunFile, {
+      headers: { 'Content-Type': file.contentType },
+    });
+  } catch {
+    // Handle cases where file doesn't exist or can't be read
+    return undefined;
+  }
 };
 
-// Get index.html for SPA fallback
-export const getIndexHtml = (): StaticFile | undefined => {
-  return staticFiles.get('/index.html');
+// Get index.html Response for SPA fallback
+export const getIndexHtmlResponse = (): Response | undefined => {
+  return getStaticFileResponse('/index.html');
 };
 
 // Check if files are loaded
@@ -127,4 +148,25 @@ export const hasStaticFiles = (): boolean => {
   return staticFiles.size > 0;
 };
 
-export { StaticFile };
+// Legacy exports for backward compatibility
+export const getStaticFile = (urlPath: string): { content: Buffer; contentType: string } | undefined => {
+  const normalizedPath = urlPath.startsWith('/') ? urlPath : `/${urlPath}`;
+  const file = staticFiles.get(normalizedPath);
+  
+  if (!file) {
+    return undefined;
+  }
+  
+  // Read file content synchronously (less efficient than getStaticFileResponse)
+  const content = fs.readFileSync(file.path);
+  return {
+    content,
+    contentType: file.contentType,
+  };
+};
+
+export const getIndexHtml = (): { content: Buffer; contentType: string } | undefined => {
+  return getStaticFile('/index.html');
+};
+
+export type { StaticFile };

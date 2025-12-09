@@ -9,7 +9,22 @@ Health check endpoint.
 
 **Response:**
 ```json
-{ "status": "ok" }
+{
+  "status": "healthy",
+  "timestamp": "2025-01-15T10:30:00.000Z"
+}
+```
+
+### GET /health/version
+Get build version information.
+
+**Response:**
+```json
+{
+  "version": "v1.0.0",
+  "buildTime": "2025-01-15T10:00:00.000Z",
+  "gitCommit": "abc1234"
+}
 ```
 
 ### GET /cluster/status

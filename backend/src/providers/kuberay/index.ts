@@ -251,6 +251,13 @@ export class KubeRayProvider implements Provider {
                 { containerPort: 10001, name: 'client' },
                 { containerPort: 8000, name: 'serve' },
               ],
+              envFrom: [
+                {
+                  secretRef: {
+                    name: config.hfTokenSecret,
+                  },
+                },
+              ],
             },
           ],
         },
@@ -288,6 +295,13 @@ export class KubeRayProvider implements Provider {
                   'nvidia.com/gpu': String(gpuCount),
                 },
               },
+              envFrom: [
+                {
+                  secretRef: {
+                    name: config.hfTokenSecret,
+                  },
+                },
+              ],
             },
           ],
           tolerations: [
@@ -366,6 +380,13 @@ export class KubeRayProvider implements Provider {
                   'nvidia.com/gpu': String(gpuCount),
                 },
               },
+              envFrom: [
+                {
+                  secretRef: {
+                    name: config.hfTokenSecret,
+                  },
+                },
+              ],
             },
           ],
           tolerations: [

@@ -1,0 +1,15 @@
+# Bun configuration for KubeFoundry monorepo
+# https://bun.com/docs/pm/cli/install#configuration
+
+[install]
+# Use isolated installs to prevent phantom dependencies in monorepo
+linker = "isolated"
+
+# Require lockfile to match package.json (enforced via bun ci in CI)
+frozenLockfile = false
+
+# Supply-chain hardening: only install packages published at least 3 days ago
+minimumReleaseAge = 259200
+
+# Exclude critical packages from age gate to allow urgent security patches
+minimumReleaseAgeExcludes = ["@types/bun", "@types/node", "typescript"]

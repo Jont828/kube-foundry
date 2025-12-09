@@ -46,6 +46,15 @@ export type KubeRayDeploymentConfig = z.infer<typeof kuberayDeploymentConfigSche
 /**
  * KubeRay RayService manifest schema for validation
  */
+/**
+ * envFrom schema for secret references
+ */
+const envFromSchema = z.array(z.object({
+  secretRef: z.object({
+    name: z.string(),
+  }),
+})).optional();
+
 export const kuberayManifestSchema = z.object({
   apiVersion: z.literal('ray.io/v1'),
   kind: z.literal('RayService'),
@@ -72,6 +81,7 @@ export const kuberayManifestSchema = z.object({
                 containerPort: z.number(),
                 name: z.string(),
               })).optional(),
+              envFrom: envFromSchema,
             })),
           }),
         }),
@@ -91,6 +101,7 @@ export const kuberayManifestSchema = z.object({
                 limits: z.record(z.string()),
                 requests: z.record(z.string()),
               }),
+              envFrom: envFromSchema,
             })),
             tolerations: z.array(z.object({
               key: z.string(),
