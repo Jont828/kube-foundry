@@ -5,7 +5,7 @@
 KubeFoundry is a monorepo with three packages:
 - **frontend** - React SPA for user interaction
 - **backend** - Hono API for Kubernetes operations (runs on Bun)
-- **shared** - Common TypeScript types
+- **shared** - Common TypeScript types (imported directly by frontend and backend)
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────────┐

@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { healthApi, type ClusterStatus } from '@/lib/api'
+import { healthApi, type ClusterStatusResponse } from '@/lib/api'
 
 export function useClusterStatus() {
-  return useQuery<ClusterStatus>({
+  return useQuery<ClusterStatusResponse>({
     queryKey: ['cluster-status'],
     queryFn: async () => {
       try {

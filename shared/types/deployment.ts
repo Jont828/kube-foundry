@@ -60,7 +60,7 @@ export interface DeploymentStatus {
     ready: number;
     available: number;
   };
-  conditions: Condition[];
+  conditions?: Condition[];
   pods: PodStatus[];
   createdAt: string;
   frontendService?: string;      // Service name for port-forwarding
@@ -84,6 +84,9 @@ export interface DeploymentListResponse {
   deployments: DeploymentStatus[];
 }
 
+/**
+ * Basic cluster connectivity status
+ */
 export interface ClusterStatus {
   connected: boolean;
   namespace: string;
