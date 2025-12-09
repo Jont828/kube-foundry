@@ -260,16 +260,16 @@ export class DynamoProvider implements Provider {
     const obj = raw as {
       metadata?: { name?: string; namespace?: string; creationTimestamp?: string };
       spec?: {
-        VllmWorker?: { 'model-path'?: string; replicas?: number };
-        SglangWorker?: { 'model-path'?: string; replicas?: number };
-        TrtllmWorker?: { 'model-path'?: string; replicas?: number };
+        VllmWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
+        SglangWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
+        TrtllmWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
         // Disaggregated worker types
-        VllmPrefillWorker?: { 'model-path'?: string; replicas?: number };
-        VllmDecodeWorker?: { 'model-path'?: string; replicas?: number };
-        SglangPrefillWorker?: { 'model-path'?: string; replicas?: number };
-        SglangDecodeWorker?: { 'model-path'?: string; replicas?: number };
-        TrtllmPrefillWorker?: { 'model-path'?: string; replicas?: number };
-        TrtllmDecodeWorker?: { 'model-path'?: string; replicas?: number };
+        VllmPrefillWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
+        VllmDecodeWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
+        SglangPrefillWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
+        SglangDecodeWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
+        TrtllmPrefillWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
+        TrtllmDecodeWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
         Frontend?: { replicas?: number };
       };
       status?: {
@@ -294,6 +294,7 @@ export class DynamoProvider implements Provider {
     // Determine engine and mode from spec
     let engine: 'vllm' | 'sglang' | 'trtllm' = 'vllm';
     let modelId = '';
+    let servedModelName = '';
     let desiredReplicas = 1;
     let mode: 'aggregated' | 'disaggregated' = 'aggregated';
 
@@ -305,6 +306,7 @@ export class DynamoProvider implements Provider {
       engine = 'vllm';
       mode = 'disaggregated';
       modelId = spec.VllmPrefillWorker?.['model-path'] || spec.VllmDecodeWorker?.['model-path'] || '';
+      servedModelName = spec.VllmPrefillWorker?.['served-model-name'] || spec.VllmDecodeWorker?.['served-model-name'] || '';
       prefillDesired = spec.VllmPrefillWorker?.replicas || 0;
       decodeDesired = spec.VllmDecodeWorker?.replicas || 0;
       desiredReplicas = prefillDesired + decodeDesired;
@@ -312,6 +314,7 @@ export class DynamoProvider implements Provider {
       engine = 'sglang';
       mode = 'disaggregated';
       modelId = spec.SglangPrefillWorker?.['model-path'] || spec.SglangDecodeWorker?.['model-path'] || '';
+      servedModelName = spec.SglangPrefillWorker?.['served-model-name'] || spec.SglangDecodeWorker?.['served-model-name'] || '';
       prefillDesired = spec.SglangPrefillWorker?.replicas || 0;
       decodeDesired = spec.SglangDecodeWorker?.replicas || 0;
       desiredReplicas = prefillDesired + decodeDesired;
@@ -319,20 +322,24 @@ export class DynamoProvider implements Provider {
       engine = 'trtllm';
       mode = 'disaggregated';
       modelId = spec.TrtllmPrefillWorker?.['model-path'] || spec.TrtllmDecodeWorker?.['model-path'] || '';
+      servedModelName = spec.TrtllmPrefillWorker?.['served-model-name'] || spec.TrtllmDecodeWorker?.['served-model-name'] || '';
       prefillDesired = spec.TrtllmPrefillWorker?.replicas || 0;
       decodeDesired = spec.TrtllmDecodeWorker?.replicas || 0;
       desiredReplicas = prefillDesired + decodeDesired;
     } else if (spec.VllmWorker) {
       engine = 'vllm';
       modelId = spec.VllmWorker['model-path'] || '';
+      servedModelName = spec.VllmWorker['served-model-name'] || '';
       desiredReplicas = spec.VllmWorker.replicas || 1;
     } else if (spec.SglangWorker) {
       engine = 'sglang';
       modelId = spec.SglangWorker['model-path'] || '';
+      servedModelName = spec.SglangWorker['served-model-name'] || '';
       desiredReplicas = spec.SglangWorker.replicas || 1;
     } else if (spec.TrtllmWorker) {
       engine = 'trtllm';
       modelId = spec.TrtllmWorker['model-path'] || '';
+      servedModelName = spec.TrtllmWorker['served-model-name'] || '';
       desiredReplicas = spec.TrtllmWorker.replicas || 1;
     }
 
@@ -340,6 +347,7 @@ export class DynamoProvider implements Provider {
       name: obj.metadata?.name || 'unknown',
       namespace: obj.metadata?.namespace || 'default',
       modelId,
+      servedModelName: servedModelName || obj.metadata?.name || 'unknown',
       engine,
       mode,
       phase: (status.phase as DeploymentPhase) || 'Pending',

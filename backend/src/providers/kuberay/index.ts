@@ -57,7 +57,7 @@ export class KubeRayProvider implements Provider {
             llm_configs: [
               {
                 model_loading_config: {
-                  model_id: config.servedModelName || config.name,
+                  model_id: config.servedModelName || config.modelId,
                   model_source: config.modelId,
                   ...(config.acceleratorType && { accelerator_type: config.acceleratorType }),
                 },
@@ -130,7 +130,7 @@ export class KubeRayProvider implements Provider {
           args: {
             prefill_config: {
               model_loading_config: {
-                model_id: config.servedModelName || config.name,
+                model_id: config.servedModelName || config.modelId,
                 model_source: config.modelId,
               },
               deployment_config: {
@@ -161,7 +161,7 @@ export class KubeRayProvider implements Provider {
             },
             decode_config: {
               model_loading_config: {
-                model_id: config.servedModelName || config.name,
+                model_id: config.servedModelName || config.modelId,
                 model_source: config.modelId,
               },
               deployment_config: {
@@ -466,6 +466,7 @@ export class KubeRayProvider implements Provider {
 
     // Try to extract model info from serveConfigV2
     let modelId = '';
+    let servedModelName = '';
     let mode: 'aggregated' | 'disaggregated' = 'aggregated';
 
     if (spec.serveConfigV2) {
@@ -477,6 +478,11 @@ export class KubeRayProvider implements Provider {
       const modelMatch = spec.serveConfigV2.match(/model_source:\s*["']?([^"'\n]+)["']?/);
       if (modelMatch) {
         modelId = modelMatch[1].trim();
+      }
+      // Try to extract model_id (served model name)
+      const servedModelMatch = spec.serveConfigV2.match(/model_id:\s*["']?([^"'\n]+)["']?/);
+      if (servedModelMatch) {
+        servedModelName = servedModelMatch[1].trim();
       }
     }
 
@@ -514,6 +520,7 @@ export class KubeRayProvider implements Provider {
       name: obj.metadata?.name || 'unknown',
       namespace: obj.metadata?.namespace || 'default',
       modelId,
+      servedModelName: servedModelName || obj.metadata?.name || 'unknown',
       engine: 'vllm', // Ray Serve uses vLLM backend
       mode,
       phase,

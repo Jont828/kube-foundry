@@ -13,8 +13,8 @@ import {
 import { DeploymentStatusBadge } from './DeploymentStatusBadge'
 import { useDeleteDeployment, type DeploymentStatus } from '@/hooks/useDeployments'
 import { useToast } from '@/hooks/useToast'
-import { formatRelativeTime } from '@/lib/utils'
-import { Eye, Trash2, Loader2 } from 'lucide-react'
+import { formatRelativeTime, generateAynaUrl } from '@/lib/utils'
+import { Eye, Trash2, Loader2, MessageSquare } from 'lucide-react'
 
 interface DeploymentListProps {
   deployments: DeploymentStatus[]
@@ -130,14 +130,28 @@ export function DeploymentList({ deployments }: DeploymentListProps) {
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
                     <Link to={`/deployments/${deployment.name}?namespace=${deployment.namespace}`}>
-                      <Button size="sm" variant="ghost">
+                      <Button size="sm" variant="ghost" title="View details">
                         <Eye className="h-4 w-4" />
                       </Button>
                     </Link>
+                    <a
+                      href={generateAynaUrl({
+                        model: deployment.modelId,
+                        provider: 'openai',
+                        endpoint: 'http://localhost:8000/v1',
+                        type: 'chat',
+                      })}
+                      title="Open in Ayna"
+                    >
+                      <Button size="sm" variant="ghost">
+                        <MessageSquare className="h-4 w-4" />
+                      </Button>
+                    </a>
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => setDeleteTarget(deployment)}
+                      title="Delete deployment"
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>

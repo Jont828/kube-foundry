@@ -52,6 +52,7 @@ export interface DeploymentStatus {
   name: string;
   namespace: string;
   modelId: string;
+  servedModelName?: string;      // Model name exposed via API (for clients)
   engine: Engine;
   mode: DeploymentMode;
   phase: DeploymentPhase;

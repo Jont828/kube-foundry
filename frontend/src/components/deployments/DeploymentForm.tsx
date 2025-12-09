@@ -32,6 +32,7 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
     name: generateDeploymentName(model.id),
     namespace: '',
     modelId: model.id,
+    servedModelName: model.id,  // Use HuggingFace model ID as served model name
     engine: model.supportedEngines[0] || 'vllm',
     mode: 'aggregated',
     routerMode: 'none',
