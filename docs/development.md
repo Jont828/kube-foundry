@@ -35,9 +35,9 @@ bun run compile
 The compile process:
 1. Builds the frontend with Vite
 2. Embeds frontend assets as base64 in `backend/src/embedded-assets.ts`
-3. Compiles everything into a single ~64MB executable
+3. Compiles everything into a single ~63MB executable using `bun build --compile`
 
-The binary is completely self-contained - no additional files needed.
+The binary is completely self-contained - no additional files needed. The backend uses Hono on Bun for optimal performance.
 
 ## Environment Variables
 

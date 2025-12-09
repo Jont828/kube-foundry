@@ -10,7 +10,7 @@
 
 ### TypeScript
 - No `any` types - use proper typing
-- Use Zod for runtime validation
+- Use Zod for runtime validation (integrated with Hono via `@hono/zod-validator`)
 - Export types from `shared/types/`
 - Use path aliases (`@/`) for imports
 
@@ -21,18 +21,28 @@
 - Component composition over inheritance
 
 ### File Organization
+
+**Frontend:**
 ```
 components/
   feature-name/
     FeatureComponent.tsx
     SubComponent.tsx
-    
 hooks/
   useFeature.ts
-  
 lib/
   api.ts        # API client
   utils.ts      # Utility functions
+```
+
+**Backend:**
+```
+src/
+  hono-app.ts   # All routes consolidated
+  index.ts      # Bun.serve() entry point
+  providers/    # Inference runtime providers
+  services/     # Business logic (Kubernetes, Helm, etc.)
+  lib/          # Shared utilities
 ```
 
 ## Testing

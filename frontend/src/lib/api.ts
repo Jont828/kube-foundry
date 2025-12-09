@@ -1,81 +1,89 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+// API Base URL - note: no /api suffix, the client adds routes
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-console.log('[API] API_BASE:', API_BASE)
+console.log('[API] API_BASE:', API_BASE);
+
+// ============================================================================
+// Shared Types (re-exported from shared package where possible)
+// ============================================================================
+
+export type Engine = 'vllm' | 'sglang' | 'trtllm';
+export type ModelTask = 'text-generation' | 'chat' | 'fill-mask';
+export type DeploymentMode = 'aggregated' | 'disaggregated';
+export type RouterMode = 'none' | 'kv' | 'round-robin';
+export type DeploymentPhase = 'Pending' | 'Deploying' | 'Running' | 'Failed' | 'Terminating';
+export type PodPhase = 'Pending' | 'Running' | 'Succeeded' | 'Failed' | 'Unknown';
 
 export interface Model {
-  id: string
-  name: string
-  description: string
-  size: string
-  task: 'text-generation' | 'chat' | 'fill-mask'
-  parameters?: number
-  contextLength?: number
-  license?: string
-  supportedEngines: Array<'vllm' | 'sglang' | 'trtllm'>
-  minGpuMemory?: string
-  minGpus?: number
+  id: string;
+  name: string;
+  description: string;
+  size: string;
+  task: ModelTask;
+  parameters?: number;
+  contextLength?: number;
+  license?: string;
+  supportedEngines: Engine[];
+  minGpuMemory?: string;
+  minGpus?: number;
 }
 
 export interface DeploymentConfig {
-  name: string
-  namespace: string
-  modelId: string
-  engine: 'vllm' | 'sglang' | 'trtllm'
-  mode: 'aggregated' | 'disaggregated'
-  servedModelName?: string
-  routerMode: 'none' | 'kv' | 'round-robin'
-  replicas: number
-  hfTokenSecret: string
-  contextLength?: number
-  enforceEager: boolean
-  enablePrefixCaching: boolean
-  trustRemoteCode: boolean
+  name: string;
+  namespace: string;
+  modelId: string;
+  engine: Engine;
+  mode: DeploymentMode;
+  servedModelName?: string;
+  routerMode: RouterMode;
+  replicas: number;
+  hfTokenSecret: string;
+  contextLength?: number;
+  enforceEager: boolean;
+  enablePrefixCaching: boolean;
+  trustRemoteCode: boolean;
   resources?: {
-    gpu: number
-    memory?: string
-  }
-  engineArgs?: Record<string, unknown>
-
-  // Disaggregated mode configuration (P/D separation)
-  prefillReplicas?: number
-  decodeReplicas?: number
-  prefillGpus?: number
-  decodeGpus?: number
+    gpu: number;
+    memory?: string;
+  };
+  engineArgs?: Record<string, unknown>;
+  prefillReplicas?: number;
+  decodeReplicas?: number;
+  prefillGpus?: number;
+  decodeGpus?: number;
 }
 
 export interface PodStatus {
-  name: string
-  phase: 'Pending' | 'Running' | 'Succeeded' | 'Failed' | 'Unknown'
-  ready: boolean
-  restarts: number
-  node?: string
+  name: string;
+  phase: PodPhase;
+  ready: boolean;
+  restarts: number;
+  node?: string;
 }
 
 export interface DeploymentStatus {
-  name: string
-  namespace: string
-  modelId: string
-  engine: 'vllm' | 'sglang' | 'trtllm'
-  mode: 'aggregated' | 'disaggregated'
-  phase: 'Pending' | 'Deploying' | 'Running' | 'Failed' | 'Terminating'
+  name: string;
+  namespace: string;
+  modelId: string;
+  engine: Engine;
+  mode: DeploymentMode;
+  phase: DeploymentPhase;
   replicas: {
-    desired: number
-    ready: number
-    available: number
-  }
-  pods: PodStatus[]
-  createdAt: string
-  frontendService?: string
-
-  // Disaggregated mode status (P/D separation)
+    desired: number;
+    ready: number;
+    available: number;
+  };
+  pods: PodStatus[];
+  createdAt: string;
+  frontendService?: string;
   prefillReplicas?: {
-    desired: number
-    ready: number
-  }
+    desired: number;
+    ready: number;
+  };
   decodeReplicas?: {
-    desired: number
-    ready: number
-  }
+    desired: number;
+    ready: number;
+  };
 }
 
 export interface ClusterStatus {
@@ -149,42 +157,55 @@ export interface DeploymentsListResponse {
   pagination: Pagination;
 }
 
+// ============================================================================
+// Error Handling
+// ============================================================================
+
 class ApiError extends Error {
   constructor(public statusCode: number, message: string) {
-    super(message)
-    this.name = 'ApiError'
+    super(message);
+    this.name = 'ApiError';
   }
 }
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${endpoint}`
-  console.log('[API] Fetching:', url)
+  const url = `${API_BASE}/api${endpoint}`;
+  console.log('[API] Fetching:', url);
 
   const response = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
     },
     ...options,
-  })
+  });
 
-  console.log('[API] Response status:', response.status, 'for', url)
+  console.log('[API] Response status:', response.status, 'for', url);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Unknown error' }))
-    console.error('[API] Error response:', error)
-    throw new ApiError(response.status, error.error?.message || error.message || 'Request failed')
+    const error = await response.json().catch(() => ({ message: 'Unknown error' }));
+    console.error('[API] Error response:', error);
+    throw new ApiError(
+      response.status,
+      error.error?.message || error.message || 'Request failed'
+    );
   }
 
-  return response.json()
+  return response.json();
 }
 
+// ============================================================================
 // Models API
+// ============================================================================
+
 export const modelsApi = {
   list: () => request<{ models: Model[] }>('/models'),
   get: (id: string) => request<Model>(`/models/${encodeURIComponent(id)}`),
-}
+};
 
+// ============================================================================
 // Deployments API
+// ============================================================================
+
 export const deploymentsApi = {
   list: (namespace?: string, options?: { limit?: number; offset?: number }) => {
     const params = new URLSearchParams();
@@ -201,7 +222,7 @@ export const deploymentsApi = {
     ),
 
   create: (config: DeploymentConfig) =>
-    request<{ message: string; name: string; namespace: string }>('/deployments', {
+    request<{ message: string; name: string; namespace: string; warnings?: string[] }>('/deployments', {
       method: 'POST',
       body: JSON.stringify(config),
     }),
@@ -216,15 +237,21 @@ export const deploymentsApi = {
     request<{ pods: PodStatus[] }>(
       `/deployments/${encodeURIComponent(name)}/pods${namespace ? `?namespace=${encodeURIComponent(namespace)}` : ''}`
     ),
-}
+};
 
+// ============================================================================
 // Health API
+// ============================================================================
+
 export const healthApi = {
   check: () => request<{ status: string; timestamp: string }>('/health'),
   clusterStatus: () => request<ClusterStatus>('/cluster/status'),
-}
+};
 
+// ============================================================================
 // Settings API
+// ============================================================================
+
 export const settingsApi = {
   get: () => request<Settings>('/settings'),
   update: (settings: { activeProviderId?: string; defaultNamespace?: string }) =>
@@ -234,9 +261,12 @@ export const settingsApi = {
     }),
   listProviders: () => request<{ providers: ProviderInfo[] }>('/settings/providers'),
   getProvider: (id: string) => request<ProviderDetails>(`/settings/providers/${encodeURIComponent(id)}`),
-}
+};
 
+// ============================================================================
 // Installation API
+// ============================================================================
+
 export interface HelmStatus {
   available: boolean;
   version?: string;
@@ -277,32 +307,38 @@ export interface InstallResult {
 
 export const installationApi = {
   getHelmStatus: () => request<HelmStatus>('/installation/helm/status'),
-  
+
   getProviderStatus: (providerId: string) =>
     request<InstallationStatus>(`/installation/providers/${encodeURIComponent(providerId)}/status`),
-  
+
   getProviderCommands: (providerId: string) =>
-    request<{ providerId: string; providerName: string; commands: string[]; steps: Array<{ title: string; command?: string; description: string }> }>(
-      `/installation/providers/${encodeURIComponent(providerId)}/commands`
-    ),
-  
+    request<{
+      providerId: string;
+      providerName: string;
+      commands: string[];
+      steps: Array<{ title: string; command?: string; description: string }>;
+    }>(`/installation/providers/${encodeURIComponent(providerId)}/commands`),
+
   installProvider: (providerId: string) =>
     request<InstallResult>(`/installation/providers/${encodeURIComponent(providerId)}/install`, {
       method: 'POST',
     }),
-  
+
   upgradeProvider: (providerId: string) =>
     request<InstallResult>(`/installation/providers/${encodeURIComponent(providerId)}/upgrade`, {
       method: 'POST',
     }),
-  
+
   uninstallProvider: (providerId: string) =>
     request<InstallResult>(`/installation/providers/${encodeURIComponent(providerId)}/uninstall`, {
       method: 'POST',
     }),
-}
+};
 
+// ============================================================================
 // GPU Operator API
+// ============================================================================
+
 export interface GPUOperatorStatus {
   installed: boolean;
   crdFound: boolean;
@@ -344,11 +380,11 @@ export interface ClusterGpuCapacity {
 
 export const gpuOperatorApi = {
   getStatus: () => request<GPUOperatorStatus>('/installation/gpu-operator/status'),
-  
+
   install: () =>
     request<GPUOperatorInstallResult>('/installation/gpu-operator/install', {
       method: 'POST',
     }),
 
   getCapacity: () => request<ClusterGpuCapacity>('/installation/gpu-capacity'),
-}
+};

@@ -6,7 +6,7 @@ Thank you for your interest in contributing to KubeFoundry! This guide covers de
 
 ### Prerequisites
 
-- Node.js 18+ (or [Bun](https://bun.sh) 1.0+)
+- [Bun](https://bun.sh) 1.0+
 - Access to a Kubernetes cluster
 - Helm CLI
 - kubectl configured with cluster access
@@ -15,10 +15,10 @@ Thank you for your interest in contributing to KubeFoundry! This guide covers de
 
 ```bash
 # Install dependencies
-npm install
+bun install
 
 # Start development servers (frontend + backend)
-npm run dev
+bun run dev
 
 # Frontend: http://localhost:5173
 # Backend: http://localhost:3001
@@ -27,28 +27,27 @@ npm run dev
 ### Build Commands
 
 ```bash
-# Build all packages
-npm run build
+# Run all tests (frontend + backend)
+bun run test
 
-# Build single binary (backend only)
-npm run compile
+# Build single binary (includes frontend)
+make compile
 
 # Lint all packages
-npm run lint
+bun run lint
 ```
 
 ### Individual Package Commands
 
 **Frontend:**
 ```bash
-npm run dev:frontend    # Start Vite dev server
-npm run build:frontend  # Build for production
+bun run dev:frontend    # Start Vite dev server
+bun run build:frontend  # Build for production
 ```
 
 **Backend:**
 ```bash
-npm run dev:backend     # Start with watch mode
-npm run build:backend   # Compile TypeScript
+bun run dev:backend     # Start with watch mode
 ```
 
 ## Project Structure
@@ -62,13 +61,15 @@ kubefoundry/
 │   │   ├── hooks/       # React hooks
 │   │   └── lib/         # Utilities and API client
 │   └── ...
-├── backend/           # Express backend API
+├── backend/           # Hono backend API (runs on Bun)
 │   ├── src/
+│   │   ├── hono-app.ts  # All API routes consolidated
+│   │   ├── index.ts     # Bun.serve() entry point
 │   │   ├── providers/   # Provider implementations
 │   │   │   ├── types.ts      # Provider interface
 │   │   │   ├── index.ts      # Provider registry
-│   │   │   └── dynamo/       # NVIDIA Dynamo provider
-│   │   ├── routes/      # API routes
+│   │   │   ├── dynamo/       # NVIDIA Dynamo provider
+│   │   │   └── kuberay/      # KubeRay provider
 │   │   ├── services/    # Core services
 │   │   │   ├── kubernetes.ts # K8s client
 │   │   │   ├── config.ts     # ConfigMap persistence
@@ -269,10 +270,11 @@ Please refer to [docs/standards.md](docs/standards.md) for coding standards and 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
-4. Run linting (`npm run lint`)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+4. Run tests (`bun run test`)
+5. Run linting (`bun run lint`)
+6. Commit your changes (`git commit -m 'Add amazing feature'`)
+7. Push to the branch (`git push origin feature/amazing-feature`)
+8. Open a Pull Request
 
 ## Questions?
 

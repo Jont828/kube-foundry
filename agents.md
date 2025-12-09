@@ -6,11 +6,11 @@
 
 ## WHAT: Tech Stack & Structure
 
-**Stack**: React 18 + TypeScript + Vite (frontend) | Node.js + Express + Zod (backend) | Monorepo with shared types
+**Stack**: React 18 + TypeScript + Vite (frontend) | Bun + Hono + Zod (backend) | Monorepo with shared types
 
 **Key directories**:
 - `frontend/src/` - React components, hooks, pages
-- `backend/src/` - Express routes, providers, services
+- `backend/src/` - Hono app, providers, services
 - `shared/types/` - Shared TypeScript definitions
 - `docs/` - Detailed documentation (read as needed)
 
@@ -27,6 +27,8 @@ make compile             # Build single binary to dist/
 
 **Always run `bun run test` after implementing functionality to verify both frontend and backend changes.**
 
+**Always update relevant documentation** (this file, `docs/`, `README.md`, `CONTRIBUTING.md`) after making architectural or stack changes.
+
 ## Documentation (Progressive Disclosure)
 
 Read these files **only when relevant** to your task:
@@ -40,6 +42,7 @@ Read these files **only when relevant** to your task:
 
 ## Key Files Reference
 
+- Hono app (all routes): `backend/src/hono-app.ts`
 - Provider interface: `backend/src/providers/types.ts`
 - Provider registry: `backend/src/providers/index.ts`
 - Kubernetes client: `backend/src/services/kubernetes.ts`
