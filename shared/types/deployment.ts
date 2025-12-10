@@ -56,6 +56,7 @@ export interface DeploymentStatus {
   engine: Engine;
   mode: DeploymentMode;
   phase: DeploymentPhase;
+  provider: string;              // Provider ID (dynamo, kuberay)
   replicas: {
     desired: number;
     ready: number;

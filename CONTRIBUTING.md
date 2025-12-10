@@ -102,14 +102,14 @@ interface Provider {
 
 ### Configuration Storage
 
-Settings are stored in a Kubernetes ConfigMap (`kubefoundry-config`) in the `kubefoundry` namespace:
+Settings are stored in a Kubernetes ConfigMap (`kubefoundry-config`) in the `kubefoundry-system` namespace:
 
 ```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: kubefoundry-config
-  namespace: kubefoundry
+  namespace: kubefoundry-system
 data:
   config.json: |
     {
@@ -123,14 +123,14 @@ data:
 ### Frontend (.env)
 ```env
 VITE_API_URL=http://localhost:3001
-VITE_DEFAULT_NAMESPACE=kubefoundry
+VITE_DEFAULT_NAMESPACE=kubefoundry-system
 VITE_DEFAULT_HF_SECRET=hf-token-secret
 ```
 
 ### Backend (.env)
 ```env
 PORT=3001
-DEFAULT_NAMESPACE=kubefoundry
+DEFAULT_NAMESPACE=kubefoundry-system
 CORS_ORIGIN=http://localhost:5173
 ```
 
@@ -208,7 +208,7 @@ curl -X POST http://localhost:3001/api/deployments \
   -H "Content-Type: application/json" \
   -d '{
     "name": "test-deployment",
-    "namespace": "kubefoundry",
+    "namespace": "kubefoundry-system",
     "modelId": "Qwen/Qwen3-0.6B",
     "engine": "vllm",
     "mode": "aggregated",

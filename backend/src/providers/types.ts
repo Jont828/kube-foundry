@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { DeploymentConfig, DeploymentStatus } from '@kubefoundry/shared';
+import type { DeploymentConfig, DeploymentStatus, MetricDefinition, MetricsEndpointConfig } from '@kubefoundry/shared';
 
 /**
  * CRD configuration for a provider's custom resources
@@ -115,6 +115,18 @@ export interface Provider {
     customObjectsApi: unknown;
     coreV1Api: unknown;
   }): Promise<InstallationStatus>;
+
+  /**
+   * Get metrics endpoint configuration for this provider's deployments.
+   * Returns null if the provider does not support metrics.
+   */
+  getMetricsConfig(): MetricsEndpointConfig | null;
+
+  /**
+   * Get the list of key metrics to display for this provider.
+   * These define which Prometheus metrics to extract and how to display them.
+   */
+  getKeyMetrics(): MetricDefinition[];
 }
 
 /**

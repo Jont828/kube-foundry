@@ -41,8 +41,8 @@ RUN cd backend && \
       --outfile=kubefoundry
 
 # Stage 2: Runtime with distroless
-# Using static-debian12 for fully static binaries (no glibc dependency)
-FROM gcr.io/distroless/static-debian12:nonroot
+# Using cc-debian12 which includes glibc (required by Bun-compiled binaries)
+FROM gcr.io/distroless/cc-debian12:nonroot
 
 # Labels for container registry
 LABEL org.opencontainers.image.title="KubeFoundry"

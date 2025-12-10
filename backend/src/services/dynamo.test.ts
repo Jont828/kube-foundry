@@ -4,7 +4,7 @@ import { generateDynamoManifest, validateManifest } from './dynamo';
 describe('generateDynamoManifest', () => {
   const baseConfig = {
     name: 'test-deployment',
-    namespace: 'kubefoundry',
+    namespace: 'kubefoundry-system',
     modelId: 'Qwen/Qwen3-0.6B',
     engine: 'vllm' as const,
     mode: 'aggregated' as const,
@@ -26,7 +26,7 @@ describe('generateDynamoManifest', () => {
     it('generates correct metadata', () => {
       const manifest = generateDynamoManifest(baseConfig);
       expect(manifest.metadata.name).toBe('test-deployment');
-      expect(manifest.metadata.namespace).toBe('kubefoundry');
+      expect(manifest.metadata.namespace).toBe('kubefoundry-system');
       expect(manifest.metadata.labels).toEqual({
         'app.kubernetes.io/name': 'dynamote',
         'app.kubernetes.io/instance': 'test-deployment',
@@ -212,7 +212,7 @@ describe('validateManifest', () => {
     kind: 'DynamoGraphDeployment',
     metadata: {
       name: 'test',
-      namespace: 'kubefoundry',
+      namespace: 'kubefoundry-system',
     },
     spec: {
       Frontend: { replicas: 1 },

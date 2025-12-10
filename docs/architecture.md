@@ -153,7 +153,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: kubefoundry-config
-  namespace: kubefoundry
+  namespace: kubefoundry-system
 data:
   config.json: |
     {

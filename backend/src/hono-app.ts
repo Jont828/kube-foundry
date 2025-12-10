@@ -11,6 +11,7 @@ import { helmService } from './services/helm';
 import { authService } from './services/auth';
 import { huggingFaceService } from './services/huggingface';
 import { secretsService } from './services/secrets';
+import { metricsService } from './services/metrics';
 import { providerRegistry, listProviderInfo } from './providers';
 import { validateGpuFit, formatGpuWarnings } from './services/gpuValidation';
 import models from './data/models.json';
@@ -377,6 +378,19 @@ const deployments = new Hono()
 
       const pods = await kubernetesService.getDeploymentPods(name, resolvedNamespace);
       return c.json({ pods });
+    }
+  )
+  .get(
+    '/:name/metrics',
+    zValidator('param', deploymentParamsSchema),
+    zValidator('query', deploymentQuerySchema),
+    async (c) => {
+      const { name } = c.req.valid('param');
+      const { namespace } = c.req.valid('query');
+      const resolvedNamespace = namespace || (await configService.getDefaultNamespace());
+
+      const metricsResponse = await metricsService.getDeploymentMetrics(name, resolvedNamespace);
+      return c.json(metricsResponse);
     }
   );
 

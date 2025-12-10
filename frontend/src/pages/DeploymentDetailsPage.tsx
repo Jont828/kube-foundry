@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DeploymentStatusBadge } from '@/components/deployments/DeploymentStatusBadge'
+import { MetricsTab } from '@/components/metrics'
 import { formatRelativeTime, generateAynaUrl } from '@/lib/utils'
 import { Loader2, ArrowLeft, Trash2, Copy, Terminal, MessageSquare } from 'lucide-react'
 import { useState } from 'react'
@@ -186,6 +187,13 @@ export function DeploymentDetailsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Metrics */}
+      <MetricsTab
+        deploymentName={deployment.name}
+        namespace={deployment.namespace}
+        provider={deployment.provider}
+      />
 
       {/* Pods */}
       {pods && pods.length > 0 && (

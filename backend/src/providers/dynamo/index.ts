@@ -1,5 +1,5 @@
 import * as k8s from '@kubernetes/client-node';
-import type { DeploymentConfig, DeploymentStatus, DeploymentPhase } from '@kubefoundry/shared';
+import type { DeploymentConfig, DeploymentStatus, DeploymentPhase, MetricDefinition, MetricsEndpointConfig } from '@kubefoundry/shared';
 import type { Provider, CRDConfig, HelmRepo, HelmChart, InstallationStatus, InstallationStep } from '../types';
 import { dynamoDeploymentConfigSchema, type DynamoDeploymentConfig } from './schema';
 
@@ -351,6 +351,7 @@ export class DynamoProvider implements Provider {
       engine,
       mode,
       phase: (status.phase as DeploymentPhase) || 'Pending',
+      provider: this.id,
       replicas: {
         desired: status.replicas?.desired || desiredReplicas,
         ready: status.replicas?.ready || 0,
@@ -512,6 +513,104 @@ export class DynamoProvider implements Provider {
         message: `Error checking installation: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
+  }
+
+  getMetricsConfig(): MetricsEndpointConfig | null {
+    return {
+      endpointPath: '/metrics',
+      port: 8000,
+      // Dynamo creates a service named {deployment-name}-frontend
+      serviceNamePattern: '{name}-frontend',
+    };
+  }
+
+  getKeyMetrics(): MetricDefinition[] {
+    return [
+      // Queue metrics
+      {
+        name: 'vllm:num_requests_running',
+        displayName: 'Running Requests',
+        description: 'Number of requests currently running on GPU',
+        unit: 'requests',
+        type: 'gauge',
+        category: 'queue',
+      },
+      {
+        name: 'vllm:num_requests_waiting',
+        displayName: 'Waiting Requests',
+        description: 'Number of requests waiting to be processed',
+        unit: 'requests',
+        type: 'gauge',
+        category: 'queue',
+      },
+      // Cache metrics
+      {
+        name: 'vllm:gpu_cache_usage_perc',
+        displayName: 'GPU KV-Cache Usage',
+        description: 'GPU KV-cache usage percentage (1 = 100%)',
+        unit: '%',
+        type: 'gauge',
+        category: 'cache',
+      },
+      {
+        name: 'vllm:gpu_prefix_cache_hit_rate',
+        displayName: 'Prefix Cache Hit Rate',
+        description: 'GPU prefix cache block hit rate',
+        unit: '%',
+        type: 'gauge',
+        category: 'cache',
+      },
+      // Latency metrics (histograms - use _sum and _count for averages)
+      {
+        name: 'vllm:e2e_request_latency_seconds',
+        displayName: 'Avg Request Latency',
+        description: 'End-to-end request latency',
+        unit: 'ms',
+        type: 'histogram',
+        category: 'latency',
+      },
+      {
+        name: 'vllm:time_to_first_token_seconds',
+        displayName: 'Avg Time to First Token',
+        description: 'Time to first token (TTFT)',
+        unit: 'ms',
+        type: 'histogram',
+        category: 'latency',
+      },
+      {
+        name: 'vllm:time_per_output_token_seconds',
+        displayName: 'Avg Time per Token',
+        description: 'Time per output token',
+        unit: 'ms',
+        type: 'histogram',
+        category: 'latency',
+      },
+      // Throughput metrics (counters - calculate rate)
+      {
+        name: 'vllm:prompt_tokens_total',
+        displayName: 'Prompt Tokens',
+        description: 'Number of prefill tokens processed',
+        unit: 'tokens/s',
+        type: 'counter',
+        category: 'throughput',
+      },
+      {
+        name: 'vllm:generation_tokens_total',
+        displayName: 'Generation Tokens',
+        description: 'Number of generation tokens processed',
+        unit: 'tokens/s',
+        type: 'counter',
+        category: 'throughput',
+      },
+      {
+        name: 'vllm:request_success_total',
+        displayName: 'Successful Requests',
+        description: 'Count of successfully processed requests',
+        unit: 'req/s',
+        type: 'counter',
+        category: 'throughput',
+      },
+    ];
   }
 }
 

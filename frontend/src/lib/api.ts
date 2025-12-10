@@ -1,7 +1,9 @@
-// API Base URL - note: no /api suffix, the client adds routes
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// API Base URL - when not specified, use relative URL (same origin)
+// This allows the frontend to work both in development (with VITE_API_URL=http://localhost:3001)
+// and in production (served from the same container as the backend)
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
-console.log('[API] API_BASE:', API_BASE);
+console.log('[API] API_BASE:', API_BASE || '(same origin)');
 
 // Auth token storage key
 const AUTH_TOKEN_KEY = 'kubefoundry_auth_token';
@@ -80,6 +82,15 @@ export type {
   ClusterStatusResponse,
 } from '@kubefoundry/shared';
 
+// Metrics types
+export type {
+  MetricsResponse,
+  RawMetricValue,
+  ComputedMetric,
+  ComputedMetrics,
+  MetricDefinition,
+} from '@kubefoundry/shared';
+
 // Import types for internal use
 import type {
   Model,
@@ -97,6 +108,7 @@ import type {
   ClusterGpuCapacity,
   DeploymentsListResponse,
   ClusterStatusResponse,
+  MetricsResponse,
   HfTokenExchangeRequest,
   HfTokenExchangeResponse,
   HfSaveSecretRequest,
@@ -199,6 +211,22 @@ export const deploymentsApi = {
   getPods: (name: string, namespace?: string) =>
     request<{ pods: PodStatus[] }>(
       `/deployments/${encodeURIComponent(name)}/pods${namespace ? `?namespace=${encodeURIComponent(namespace)}` : ''}`
+    ),
+
+  getMetrics: (name: string, namespace?: string) =>
+    request<MetricsResponse>(
+      `/deployments/${encodeURIComponent(name)}/metrics${namespace ? `?namespace=${encodeURIComponent(namespace)}` : ''}`
+    ),
+};
+
+// ============================================================================
+// Metrics API
+// ============================================================================
+
+export const metricsApi = {
+  get: (deploymentName: string, namespace?: string) =>
+    request<MetricsResponse>(
+      `/deployments/${encodeURIComponent(deploymentName)}/metrics${namespace ? `?namespace=${encodeURIComponent(namespace)}` : ''}`
     ),
 };
 

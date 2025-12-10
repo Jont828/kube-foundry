@@ -67,7 +67,7 @@ class KubernetesService {
 
     this.customObjectsApi = this.kc.makeApiClient(k8s.CustomObjectsApi);
     this.coreV1Api = this.kc.makeApiClient(k8s.CoreV1Api);
-    this.defaultNamespace = process.env.DEFAULT_NAMESPACE || 'kubefoundry';
+    this.defaultNamespace = process.env.DEFAULT_NAMESPACE || 'kubefoundry-system';
   }
 
   async checkClusterConnection(): Promise<ClusterStatus> {

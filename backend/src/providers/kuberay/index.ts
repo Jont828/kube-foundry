@@ -1,5 +1,5 @@
 import * as k8s from '@kubernetes/client-node';
-import type { DeploymentConfig, DeploymentStatus, DeploymentPhase } from '@kubefoundry/shared';
+import type { DeploymentConfig, DeploymentStatus, DeploymentPhase, MetricDefinition, MetricsEndpointConfig } from '@kubefoundry/shared';
 import type { Provider, CRDConfig, HelmRepo, HelmChart, InstallationStatus, InstallationStep } from '../types';
 import { kuberayDeploymentConfigSchema, type KubeRayDeploymentConfig } from './schema';
 
@@ -545,6 +545,7 @@ export class KubeRayProvider implements Provider {
       engine: 'vllm', // Ray Serve uses vLLM backend
       mode,
       phase,
+      provider: this.id,
       replicas: {
         desired: clusterStatus.desiredWorkerReplicas || desiredReplicas || 1,
         ready: clusterStatus.availableWorkerReplicas || 0,
@@ -723,6 +724,88 @@ export class KubeRayProvider implements Provider {
         message: `Error checking installation: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
+  }
+
+  getMetricsConfig(): MetricsEndpointConfig | null {
+    return {
+      endpointPath: '/metrics',
+      port: 8080,
+      // KubeRay exposes metrics on the head service (not serve-svc)
+      serviceNamePattern: '{name}-head-svc',
+    };
+  }
+
+  getKeyMetrics(): MetricDefinition[] {
+    return [
+      // Queue metrics
+      {
+        name: 'ray_serve_replica_processing_queries',
+        displayName: 'In-Flight Requests',
+        description: 'Current number of queries being processed',
+        unit: 'requests',
+        type: 'gauge',
+        category: 'queue',
+      },
+      {
+        name: 'ray_serve_deployment_queued_queries',
+        displayName: 'Queued Requests',
+        description: 'Number of queries waiting to be assigned to a replica',
+        unit: 'requests',
+        type: 'gauge',
+        category: 'queue',
+      },
+      // Latency metrics (histograms)
+      {
+        name: 'ray_serve_deployment_processing_latency_ms',
+        displayName: 'Avg Processing Latency',
+        description: 'Latency for queries to be processed',
+        unit: 'ms',
+        type: 'histogram',
+        category: 'latency',
+      },
+      {
+        name: 'ray_serve_http_request_latency_ms',
+        displayName: 'Avg HTTP Latency',
+        description: 'End-to-end HTTP request latency',
+        unit: 'ms',
+        type: 'histogram',
+        category: 'latency',
+      },
+      // Throughput metrics (counters)
+      {
+        name: 'ray_serve_deployment_request_counter_total',
+        displayName: 'Requests Processed',
+        description: 'Total number of queries processed',
+        unit: 'req/s',
+        type: 'counter',
+        category: 'throughput',
+      },
+      {
+        name: 'ray_serve_num_http_requests_total',
+        displayName: 'HTTP Requests',
+        description: 'Number of HTTP requests processed',
+        unit: 'req/s',
+        type: 'counter',
+        category: 'throughput',
+      },
+      // Error metrics (counters)
+      {
+        name: 'ray_serve_deployment_error_counter_total',
+        displayName: 'Errors',
+        description: 'Number of exceptions in the deployment',
+        unit: 'errors/s',
+        type: 'counter',
+        category: 'errors',
+      },
+      {
+        name: 'ray_serve_num_http_error_requests_total',
+        displayName: 'HTTP Errors',
+        description: 'Number of non-200 HTTP responses',
+        unit: 'errors/s',
+        type: 'counter',
+        category: 'errors',
+      },
+    ];
   }
 }
 

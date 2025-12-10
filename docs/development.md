@@ -70,14 +70,14 @@ Supported targets:
 ### Frontend (.env)
 ```env
 VITE_API_URL=http://localhost:3001
-VITE_DEFAULT_NAMESPACE=kubefoundry
+VITE_DEFAULT_NAMESPACE=kubefoundry-system
 VITE_DEFAULT_HF_SECRET=hf-token-secret
 ```
 
 ### Backend (.env)
 ```env
 PORT=3001
-DEFAULT_NAMESPACE=kubefoundry
+DEFAULT_NAMESPACE=kubefoundry-system
 CORS_ORIGIN=http://localhost:5173
 AUTH_ENABLED=false
 ```
@@ -177,7 +177,7 @@ kubectl create secret generic hf-token-secret \
 helm repo add nvidia-dynamo https://nvidia.github.io/dynamo
 helm repo update
 helm install dynamo-operator nvidia-dynamo/dynamo \
-  --namespace kubefoundry --create-namespace
+  --namespace kubefoundry-system --create-namespace
 ```
 
 ## Adding a New Provider
@@ -254,7 +254,7 @@ curl -X POST http://localhost:3001/api/deployments \
   -H "Content-Type: application/json" \
   -d '{
     "name": "test-deployment",
-    "namespace": "kubefoundry",
+    "namespace": "kubefoundry-system",
     "modelId": "Qwen/Qwen3-0.6B",
     "engine": "vllm",
     "mode": "aggregated",

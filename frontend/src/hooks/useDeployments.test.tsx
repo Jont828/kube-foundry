@@ -30,7 +30,7 @@ describe('useDeployments', () => {
   })
 
   it('fetches deployments with namespace filter', async () => {
-    const { result } = renderHook(() => useDeployments('kubefoundry'), {
+    const { result } = renderHook(() => useDeployments('kubefoundry-system'), {
       wrapper: createWrapper(),
     })
 
@@ -40,7 +40,7 @@ describe('useDeployments', () => {
     // All returned deployments should be in the specified namespace
     if (result.current.data && result.current.data.length > 0) {
       result.current.data.forEach(deployment => {
-        expect(deployment.namespace).toBe('kubefoundry')
+        expect(deployment.namespace).toBe('kubefoundry-system')
       })
     }
   })
@@ -83,12 +83,12 @@ describe('useDeployment', () => {
   it('fetches with namespace parameter', async () => {
     const deploymentName = mockDeployments[0].name
     
-    const { result } = renderHook(() => useDeployment(deploymentName, 'kubefoundry'), {
+    const { result } = renderHook(() => useDeployment(deploymentName, 'kubefoundry-system'), {
       wrapper: createWrapper(),
     })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(result.current.data?.namespace).toBe('kubefoundry')
+    expect(result.current.data?.namespace).toBe('kubefoundry-system')
   })
 })
 
@@ -131,7 +131,7 @@ describe('useCreateDeployment', () => {
 
     const deploymentConfig = {
       name: 'new-deployment',
-      namespace: 'kubefoundry',
+      namespace: 'kubefoundry-system',
       modelId: 'Qwen/Qwen3-0.6B',
       engine: 'vllm' as const,
       mode: 'aggregated' as const,
@@ -180,7 +180,7 @@ describe('useDeleteDeployment', () => {
 
     const { result } = renderHook(() => useDeleteDeployment(), { wrapper })
 
-    result.current.mutate({ name: 'test-deployment', namespace: 'kubefoundry' })
+    result.current.mutate({ name: 'test-deployment', namespace: 'kubefoundry-system' })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 

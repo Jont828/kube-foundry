@@ -158,6 +158,7 @@ The login command extracts your OIDC token from kubeconfig and opens your browse
 - [Architecture Overview](docs/architecture.md)
 - [API Reference](docs/api.md)
 - [Development Guide](docs/development.md)
+- [Kubernetes Deployment](deploy/kubernetes/README.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Contributing

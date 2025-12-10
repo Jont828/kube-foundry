@@ -4,3 +4,4 @@ export * from './settings';
 export * from './installation';
 export * from './api';
 export * from './huggingface';
+export * from './metrics';

@@ -10,7 +10,7 @@ export interface AppConfig {
   defaultNamespace?: string;
 }
 
-const CONFIG_NAMESPACE = 'kubefoundry';
+const CONFIG_NAMESPACE = 'kubefoundry-system';
 const CONFIG_NAME = 'kubefoundry-config';
 const CONFIG_KEY = 'config.json';
 

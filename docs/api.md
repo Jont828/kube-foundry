@@ -34,7 +34,7 @@ Get Kubernetes cluster connection status.
 ```json
 {
   "connected": true,
-  "namespace": "kubefoundry",
+  "namespace": "kubefoundry-system",
   "providerId": "dynamo",
   "providerInstalled": true
 }
@@ -104,7 +104,7 @@ Get manual installation commands for a provider.
   "commands": [
     "helm repo add nvidia-dynamo https://nvidia.github.io/dynamo",
     "helm repo update",
-    "helm install dynamo-operator nvidia-dynamo/dynamo --namespace kubefoundry --create-namespace"
+    "helm install dynamo-operator nvidia-dynamo/dynamo --namespace kubefoundry-system --create-namespace"
   ]
 }
 ```
@@ -311,7 +311,7 @@ List all deployments for the active provider.
   "deployments": [
     {
       "name": "qwen-deployment",
-      "namespace": "kubefoundry",
+      "namespace": "kubefoundry-system",
       "modelId": "Qwen/Qwen3-0.6B",
       "engine": "vllm",
       "phase": "Running",
@@ -329,7 +329,7 @@ Create a new deployment.
 ```json
 {
   "name": "qwen-deployment",
-  "namespace": "kubefoundry",
+  "namespace": "kubefoundry-system",
   "modelId": "Qwen/Qwen3-0.6B",
   "engine": "vllm",
   "mode": "aggregated",
@@ -359,7 +359,7 @@ Get deployment details including pod status.
 ```json
 {
   "name": "qwen-deployment",
-  "namespace": "kubefoundry",
+  "namespace": "kubefoundry-system",
   "modelId": "Qwen/Qwen3-0.6B",
   "engine": "vllm",
   "phase": "Running",

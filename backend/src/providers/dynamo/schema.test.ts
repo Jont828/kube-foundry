@@ -4,7 +4,7 @@ import { dynamoDeploymentConfigSchema, dynamoManifestSchema } from './schema';
 describe('dynamoDeploymentConfigSchema', () => {
   const validConfig = {
     name: 'my-deployment',
-    namespace: 'kubefoundry',
+    namespace: 'kubefoundry-system',
     modelId: 'Qwen/Qwen3-0.6B',
     engine: 'vllm' as const,
     hfTokenSecret: 'hf-token-secret',
@@ -16,7 +16,7 @@ describe('dynamoDeploymentConfigSchema', () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.name).toBe('my-deployment');
-        expect(result.data.namespace).toBe('kubefoundry');
+        expect(result.data.namespace).toBe('kubefoundry-system');
         expect(result.data.modelId).toBe('Qwen/Qwen3-0.6B');
         expect(result.data.engine).toBe('vllm');
         // Check defaults are applied
@@ -199,7 +199,7 @@ describe('dynamoManifestSchema', () => {
     kind: 'DynamoGraphDeployment',
     metadata: {
       name: 'my-deployment',
-      namespace: 'kubefoundry',
+      namespace: 'kubefoundry-system',
     },
     spec: {
       Frontend: {},
