@@ -1,28 +1,41 @@
 import { type Model } from '@/lib/api'
 import { ModelCard } from './ModelCard'
+import { EmptyState } from '@/components/ui/empty-state'
+import { useNavigate } from 'react-router-dom'
 
 interface ModelGridProps {
   models: Model[]
 }
 
 export function ModelGrid({ models }: ModelGridProps) {
+  const navigate = useNavigate()
+
   if (models.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <p className="text-lg font-medium text-muted-foreground">
-          No models found
-        </p>
-        <p className="text-sm text-muted-foreground mt-1">
-          Try adjusting your search or filters
-        </p>
-      </div>
+      <EmptyState
+        preset="no-results"
+        title="No models found"
+        description="Try adjusting your search terms or filters to find what you're looking for."
+        actionLabel="Clear Filters"
+        onAction={() => {
+          // Trigger a page refresh to clear filters
+          navigate('/models', { replace: true })
+          window.location.reload()
+        }}
+      />
     )
   }
 
   return (
     <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {models.map((model) => (
-        <ModelCard key={model.id} model={model} />
+      {models.map((model, index) => (
+        <div
+          key={model.id}
+          className="animate-fade-in"
+          style={{ animationDelay: `${index * 50}ms` }}
+        >
+          <ModelCard model={model} />
+        </div>
       ))}
     </div>
   )

@@ -2,18 +2,10 @@ import { Link } from 'react-router-dom'
 import { useDeployments } from '@/hooks/useDeployments'
 import { DeploymentList } from '@/components/deployments/DeploymentList'
 import { Button } from '@/components/ui/button'
-import { Loader2, Plus, RefreshCw } from 'lucide-react'
+import { Plus, RefreshCw, Layers } from 'lucide-react'
 
 export function DeploymentsPage() {
   const { data: deployments, isLoading, error, refetch, isFetching } = useDeployments()
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
 
   if (error) {
     return (
@@ -33,11 +25,19 @@ export function DeploymentsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Deployments</h1>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <Layers className="h-7 w-7 text-primary" />
+            Deployments
+          </h1>
           <p className="text-muted-foreground mt-1">
-            Manage your Dynamo model deployments
+            Manage your model deployments
+            {!isLoading && deployments && deployments.length > 0 && (
+              <span className="ml-2 text-foreground font-medium">
+                · {deployments.length} active
+              </span>
+            )}
           </p>
         </div>
 
@@ -47,23 +47,25 @@ export function DeploymentsPage() {
             size="icon"
             onClick={() => refetch()}
             disabled={isFetching}
+            className="shrink-0"
           >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 transition-transform ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
 
           <Link to="/">
-            <Button>
+            <Button className="shrink-0">
               <Plus className="mr-2 h-4 w-4" />
-              New Deployment
+              <span className="hidden sm:inline">New Deployment</span>
+              <span className="sm:hidden">New</span>
             </Button>
           </Link>
         </div>
       </div>
 
-      <DeploymentList deployments={deployments || []} />
+      <DeploymentList deployments={deployments || []} isLoading={isLoading} />
 
-      {deployments && deployments.length > 0 && (
-        <p className="text-xs text-muted-foreground text-center">
+      {!isLoading && deployments && deployments.length > 0 && (
+        <p className="text-xs text-muted-foreground text-center animate-fade-in">
           Status refreshes automatically every 10 seconds
         </p>
       )}

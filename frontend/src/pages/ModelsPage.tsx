@@ -4,7 +4,8 @@ import { useGpuCapacity } from '@/hooks/useGpuOperator'
 import { ModelGrid } from '@/components/models/ModelGrid'
 import { ModelSearch } from '@/components/models/ModelSearch'
 import { HfModelSearch } from '@/components/models/HfModelSearch'
-import { Loader2, BookMarked, Search } from 'lucide-react'
+import { SkeletonGrid } from '@/components/ui/skeleton'
+import { BookMarked, Search, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Engine = 'vllm' | 'sglang' | 'trtllm'
@@ -45,8 +46,14 @@ export function ModelsPage() {
 
   if (isLoading && activeTab === 'curated') {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Model Catalog</h1>
+          <p className="text-muted-foreground mt-1">
+            Select a model to deploy to your Kubernetes cluster
+          </p>
+        </div>
+        <SkeletonGrid count={8} className="lg:grid-cols-4" />
       </div>
     )
   }
@@ -66,11 +73,21 @@ export function ModelsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Model Catalog</h1>
-        <p className="text-muted-foreground mt-1">
-          Select a model to deploy to your Kubernetes cluster
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            Model Catalog
+            <Sparkles className="h-6 w-6 text-nvidia" />
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Select a model to deploy to your Kubernetes cluster
+          </p>
+        </div>
+        {models && (
+          <p className="text-sm text-muted-foreground tabular-nums">
+            {filteredModels.length} of {models.length} models
+          </p>
+        )}
       </div>
 
       {/* Tab navigation */}
@@ -78,25 +95,31 @@ export function ModelsPage() {
         <button
           onClick={() => setActiveTab('curated')}
           className={cn(
-            'flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-all duration-200 border-b-2 -mb-px rounded-t-md',
             activeTab === 'curated'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'border-primary text-primary bg-primary/5'
+              : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
           )}
         >
-          <BookMarked className="h-4 w-4" />
+          <BookMarked className={cn(
+            "h-4 w-4 transition-transform duration-200",
+            activeTab === 'curated' && "scale-110"
+          )} />
           Curated Models
         </button>
         <button
           onClick={() => setActiveTab('huggingface')}
           className={cn(
-            'flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-all duration-200 border-b-2 -mb-px rounded-t-md',
             activeTab === 'huggingface'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'border-primary text-primary bg-primary/5'
+              : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
           )}
         >
-          <Search className="h-4 w-4" />
+          <Search className={cn(
+            "h-4 w-4 transition-transform duration-200",
+            activeTab === 'huggingface' && "scale-110"
+          )} />
           Search HuggingFace
         </button>
       </div>

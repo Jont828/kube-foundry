@@ -1,10 +1,13 @@
 import { Link } from 'react-router-dom'
 import { useClusterStatus } from '@/hooks/useClusterStatus'
 import { Badge } from '@/components/ui/badge'
-import { Wifi, WifiOff, AlertTriangle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Wifi, WifiOff, AlertTriangle, Menu } from 'lucide-react'
+import { useSidebar } from './MainLayout'
 
 export function Header() {
   const { data: clusterStatus, isLoading } = useClusterStatus()
+  const { toggle } = useSidebar()
 
   const providerInstalled = clusterStatus?.providerInstallation?.installed ?? false
   const showProviderWarning = clusterStatus?.connected && !providerInstalled && !isLoading
@@ -12,56 +15,78 @@ export function Header() {
   return (
     <header className="border-b bg-card">
       {showProviderWarning && (
-        <div className="flex items-center justify-between bg-yellow-100 px-6 py-2 text-sm text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />
-            <span>
-              Provider "{clusterStatus?.provider?.name || 'Unknown'}" is not installed in your cluster.
+        <div className="flex items-center justify-between gap-2 bg-yellow-100 px-4 md:px-6 py-2 text-sm text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-200">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span className="truncate">
+              Provider "{clusterStatus?.provider?.name || 'Unknown'}" is not installed.
             </span>
           </div>
           <Link
             to="/settings"
-            className="font-medium underline hover:no-underline"
+            className="font-medium underline hover:no-underline whitespace-nowrap"
           >
-            View installation instructions →
+            View instructions →
           </Link>
         </div>
       )}
 
-      <div className="flex h-16 items-center justify-between px-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-lg font-semibold">KubeFoundry - Model Deployment Platform</h1>
+      <div className="flex h-14 md:h-16 items-center justify-between px-4 md:px-6 gap-4">
+        {/* Left side: hamburger + title */}
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Hamburger menu - mobile only */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden shrink-0 -ml-2"
+            onClick={toggle}
+            aria-label="Toggle navigation menu"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          
+          <h1 className="text-base md:text-lg font-semibold truncate">
+            <span className="hidden sm:inline">KubeFoundry - </span>
+            Model Deployment Platform
+          </h1>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
+        {/* Right side: status badges */}
+        <div className="flex items-center gap-2 md:gap-4 shrink-0">
+          {/* Connection status */}
+          <div className="flex items-center">
             {isLoading ? (
-              <Badge variant="outline" className="gap-1">
-                <div className="h-2 w-2 animate-pulse rounded-full bg-yellow-500" />
-                Connecting...
+              <Badge variant="outline" pulse className="gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                <span className="hidden sm:inline">Connecting...</span>
               </Badge>
             ) : clusterStatus?.connected ? (
-              <Badge variant="success" className="gap-1">
+              <Badge variant="success" className="gap-1.5">
                 <Wifi className="h-3 w-3" />
-                Cluster Connected
+                <span className="hidden sm:inline">Connected</span>
               </Badge>
             ) : (
-              <Badge variant="destructive" className="gap-1">
+              <Badge variant="destructive" className="gap-1.5">
                 <WifiOff className="h-3 w-3" />
-                Disconnected
+                <span className="hidden sm:inline">Disconnected</span>
               </Badge>
             )}
           </div>
 
+          {/* Provider badge - hide on smallest screens */}
           {clusterStatus?.provider && (
-            <Badge variant={providerInstalled ? 'outline' : 'destructive'}>
-              Provider: {clusterStatus.provider.name}
+            <Badge 
+              variant={providerInstalled ? 'outline' : 'destructive'}
+              className="hidden md:inline-flex"
+            >
+              {clusterStatus.provider.name}
             </Badge>
           )}
 
+          {/* Cluster name - hide on small screens */}
           {clusterStatus?.clusterName && (
-            <Badge variant="outline">
-              Cluster: {clusterStatus.clusterName}
+            <Badge variant="outline" className="hidden lg:inline-flex max-w-[150px]">
+              <span className="truncate">{clusterStatus.clusterName}</span>
             </Badge>
           )}
         </div>

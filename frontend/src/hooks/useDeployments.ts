@@ -1,5 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { deploymentsApi, type DeploymentConfig, type DeploymentStatus } from '@/lib/api'
+import { useState, useCallback } from 'react'
+
+/**
+ * Granular status for deployment operations
+ * Provides more detailed feedback than simple isPending boolean
+ */
+export type DeploymentMutationStatus = 
+  | 'idle'
+  | 'validating'
+  | 'submitting'
+  | 'success'
+  | 'error'
 
 export function useDeployments(namespace?: string) {
   return useQuery({
@@ -29,27 +41,87 @@ export function useDeploymentPods(name: string | undefined, namespace?: string) 
   })
 }
 
+/**
+ * Enhanced create deployment hook with granular status tracking
+ * Provides status: 'idle' | 'validating' | 'submitting' | 'success' | 'error'
+ */
 export function useCreateDeployment() {
   const queryClient = useQueryClient()
+  const [status, setStatus] = useState<DeploymentMutationStatus>('idle')
 
-  return useMutation({
-    mutationFn: (config: DeploymentConfig) => deploymentsApi.create(config),
+  const mutation = useMutation({
+    mutationFn: async (config: DeploymentConfig) => {
+      // Validation phase
+      setStatus('validating')
+      await new Promise(resolve => setTimeout(resolve, 300)) // Brief validation delay for UX
+      
+      // Submission phase
+      setStatus('submitting')
+      return deploymentsApi.create(config)
+    },
     onSuccess: () => {
+      setStatus('success')
       queryClient.invalidateQueries({ queryKey: ['deployments'] })
+      // Reset to idle after a brief success state
+      setTimeout(() => setStatus('idle'), 2000)
+    },
+    onError: () => {
+      setStatus('error')
+      // Reset to idle after error acknowledged
+      setTimeout(() => setStatus('idle'), 3000)
     },
   })
+
+  const reset = useCallback(() => {
+    setStatus('idle')
+    mutation.reset()
+  }, [mutation])
+
+  return {
+    ...mutation,
+    status,
+    reset,
+    // Convenience booleans for common checks
+    isValidating: status === 'validating',
+    isSubmitting: status === 'submitting',
+    isProcessing: status === 'validating' || status === 'submitting',
+  }
 }
 
+/**
+ * Enhanced delete deployment hook with granular status tracking
+ */
 export function useDeleteDeployment() {
   const queryClient = useQueryClient()
+  const [status, setStatus] = useState<DeploymentMutationStatus>('idle')
 
-  return useMutation({
-    mutationFn: ({ name, namespace }: { name: string; namespace?: string }) =>
-      deploymentsApi.delete(name, namespace),
+  const mutation = useMutation({
+    mutationFn: async ({ name, namespace }: { name: string; namespace?: string }) => {
+      setStatus('submitting')
+      return deploymentsApi.delete(name, namespace)
+    },
     onSuccess: () => {
+      setStatus('success')
       queryClient.invalidateQueries({ queryKey: ['deployments'] })
+      setTimeout(() => setStatus('idle'), 1000)
+    },
+    onError: () => {
+      setStatus('error')
+      setTimeout(() => setStatus('idle'), 3000)
     },
   })
+
+  const reset = useCallback(() => {
+    setStatus('idle')
+    mutation.reset()
+  }, [mutation])
+
+  return {
+    ...mutation,
+    status,
+    reset,
+    isProcessing: status === 'submitting',
+  }
 }
 
 export type { DeploymentConfig, DeploymentStatus }

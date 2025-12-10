@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/ui/empty-state'
+import { SkeletonTable } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogContent,
@@ -14,10 +16,11 @@ import { DeploymentStatusBadge } from './DeploymentStatusBadge'
 import { useDeleteDeployment, type DeploymentStatus } from '@/hooks/useDeployments'
 import { useToast } from '@/hooks/useToast'
 import { formatRelativeTime, generateAynaUrl } from '@/lib/utils'
-import { Eye, Trash2, Loader2, MessageSquare } from 'lucide-react'
+import { Eye, Trash2, MessageSquare } from 'lucide-react'
 
 interface DeploymentListProps {
   deployments: DeploymentStatus[]
+  isLoading?: boolean
 }
 
 /**
@@ -36,7 +39,8 @@ function formatReplicaStatus(deployment: DeploymentStatus): string {
   return `${deployment.replicas.ready}/${deployment.replicas.desired}`
 }
 
-export function DeploymentList({ deployments }: DeploymentListProps) {
+export function DeploymentList({ deployments, isLoading }: DeploymentListProps) {
+  const navigate = useNavigate()
   const { toast } = useToast()
   const deleteDeployment = useDeleteDeployment()
   const [deleteTarget, setDeleteTarget] = useState<DeploymentStatus | null>(null)
@@ -64,49 +68,62 @@ export function DeploymentList({ deployments }: DeploymentListProps) {
     }
   }
 
+  // Loading state with skeleton
+  if (isLoading) {
+    return <SkeletonTable rows={5} columns={7} className="rounded-lg border" />
+  }
+
+  // Empty state
   if (deployments.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <p className="text-lg font-medium text-muted-foreground">
-          No deployments found
-        </p>
-        <p className="text-sm text-muted-foreground mt-1 mb-4">
-          Deploy your first model to get started
-        </p>
-        <Link to="/">
-          <Button>Deploy a Model</Button>
-        </Link>
-      </div>
+      <EmptyState
+        preset="no-deployments"
+        title="No deployments yet"
+        description="Deploy your first model to start serving inference requests. Choose from our curated model library or search HuggingFace."
+        actionLabel="Browse Models"
+        onAction={() => navigate('/')}
+        secondaryActionLabel="Learn More"
+        onSecondaryAction={() => window.open('https://docs.kubefoundry.dev', '_blank')}
+      />
     )
   }
 
   return (
     <>
-      <div className="rounded-lg border">
+      <div className="rounded-lg border shadow-soft-sm overflow-hidden">
         <table className="w-full">
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="px-4 py-3 text-left text-sm font-medium">Name</th>
-              <th className="px-4 py-3 text-left text-sm font-medium">Model</th>
-              <th className="px-4 py-3 text-left text-sm font-medium">Engine</th>
+              <th className="px-4 py-3 text-left text-sm font-medium hidden md:table-cell">Model</th>
+              <th className="px-4 py-3 text-left text-sm font-medium hidden sm:table-cell">Engine</th>
               <th className="px-4 py-3 text-left text-sm font-medium">Status</th>
-              <th className="px-4 py-3 text-left text-sm font-medium">Replicas</th>
-              <th className="px-4 py-3 text-left text-sm font-medium">Age</th>
+              <th className="px-4 py-3 text-left text-sm font-medium hidden lg:table-cell">Replicas</th>
+              <th className="px-4 py-3 text-left text-sm font-medium hidden md:table-cell">Age</th>
               <th className="px-4 py-3 text-right text-sm font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {deployments.map((deployment) => (
-              <tr key={deployment.name} className="border-b last:border-0">
+            {deployments.map((deployment, index) => (
+              <tr 
+                key={deployment.name} 
+                className="border-b last:border-0 hover:bg-muted/30 transition-colors duration-150"
+                style={{ animationDelay: `${index * 50}ms` }}
+              >
                 <td className="px-4 py-3">
-                  <span className="font-medium">{deployment.name}</span>
+                  <Link 
+                    to={`/deployments/${deployment.name}?namespace=${deployment.namespace}`}
+                    className="font-medium hover:text-primary transition-colors"
+                  >
+                    {deployment.name}
+                  </Link>
                 </td>
-                <td className="px-4 py-3">
-                  <span className="text-sm text-muted-foreground">
+                <td className="px-4 py-3 hidden md:table-cell">
+                  <span className="text-sm text-muted-foreground truncate max-w-[200px] block">
                     {deployment.modelId}
                   </span>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 hidden sm:table-cell">
                   <Badge variant="outline">
                     {deployment.engine.toUpperCase()}
                   </Badge>
@@ -114,7 +131,7 @@ export function DeploymentList({ deployments }: DeploymentListProps) {
                 <td className="px-4 py-3">
                   <DeploymentStatusBadge phase={deployment.phase} />
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 hidden lg:table-cell">
                   <span className="text-sm" title={deployment.mode === 'disaggregated' ? 'Prefill / Decode replicas' : 'Worker replicas'}>
                     {formatReplicaStatus(deployment)}
                   </span>
@@ -122,13 +139,13 @@ export function DeploymentList({ deployments }: DeploymentListProps) {
                     <Badge variant="secondary" className="ml-2 text-xs">P/D</Badge>
                   )}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 hidden md:table-cell">
                   <span className="text-sm text-muted-foreground">
                     {formatRelativeTime(deployment.createdAt)}
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex items-center justify-end gap-1">
                     <Link to={`/deployments/${deployment.name}?namespace=${deployment.namespace}`}>
                       <Button size="sm" variant="ghost" title="View details">
                         <Eye className="h-4 w-4" />
@@ -180,16 +197,10 @@ export function DeploymentList({ deployments }: DeploymentListProps) {
             <Button
               variant="destructive"
               onClick={handleDelete}
-              disabled={deleteDeployment.isPending}
+              loading={deleteDeployment.isProcessing}
+              loadingText="Deleting..."
             >
-              {deleteDeployment.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                'Delete'
-              )}
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>

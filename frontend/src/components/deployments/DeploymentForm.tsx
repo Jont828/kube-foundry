@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -6,13 +6,14 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useConfetti } from '@/components/ui/confetti'
 import { useCreateDeployment, type DeploymentConfig } from '@/hooks/useDeployments'
 import { useSettings } from '@/hooks/useSettings'
 import { useHuggingFaceStatus } from '@/hooks/useHuggingFace'
 import { useToast } from '@/hooks/useToast'
-import { generateDeploymentName } from '@/lib/utils'
+import { generateDeploymentName, cn } from '@/lib/utils'
 import { type Model } from '@/lib/api'
-import { ChevronDown, ChevronUp, Loader2, AlertCircle } from 'lucide-react'
+import { ChevronDown, AlertCircle, Rocket, CheckCircle2 } from 'lucide-react'
 
 interface DeploymentFormProps {
   model: Model
@@ -28,6 +29,8 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
   const createDeployment = useCreateDeployment()
   const { data: settings } = useSettings()
   const { data: hfStatus } = useHuggingFaceStatus()
+  const formRef = useRef<HTMLFormElement>(null)
+  const { trigger: triggerConfetti, ConfettiComponent } = useConfetti(2500)
 
   // Check if this is a gated model and HF is not configured
   const isGatedModel = model.gated === true
@@ -64,17 +67,40 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
     }
   }, [settings?.activeProvider?.defaultNamespace])
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Keyboard shortcut: Cmd/Ctrl+Enter to submit
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        if (!createDeployment.isProcessing && !needsHfAuth) {
+          formRef.current?.requestSubmit()
+        }
+      }
+    }
+    
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [createDeployment.isProcessing, needsHfAuth])
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
 
     try {
       await createDeployment.mutateAsync(config)
+      
+      // Trigger confetti celebration!
+      triggerConfetti()
+      
       toast({
         title: 'Deployment Created',
         description: `${config.name} is being deployed to ${config.namespace}`,
         variant: 'success',
       })
-      navigate('/deployments')
+      
+      // Delay navigation slightly to let user see confetti
+      setTimeout(() => {
+        navigate('/deployments')
+      }, 1500)
     } catch (error) {
       toast({
         title: 'Deployment Failed',
@@ -82,7 +108,7 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
         variant: 'destructive',
       })
     }
-  }
+  }, [config, createDeployment, navigate, toast, triggerConfetti])
 
   const updateConfig = <K extends keyof DeploymentConfig>(
     key: K,
@@ -91,8 +117,41 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
     setConfig((prev) => ({ ...prev, [key]: value }))
   }
 
+  // Status-aware button content
+  const getButtonContent = () => {
+    if (needsHfAuth) {
+      return 'HuggingFace Auth Required'
+    }
+    
+    switch (createDeployment.status) {
+      case 'validating':
+        return 'Validating...'
+      case 'submitting':
+        return 'Deploying...'
+      case 'success':
+        return (
+          <>
+            <CheckCircle2 className="h-4 w-4" />
+            Deployed!
+          </>
+        )
+      default:
+        return (
+          <>
+            <Rocket className="h-4 w-4" />
+            Deploy Model
+            <kbd className="hidden sm:inline-flex ml-2 px-1.5 py-0.5 text-[10px] font-mono bg-primary-foreground/20 rounded">
+              ⌘↵
+            </kbd>
+          </>
+        )
+    }
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <>
+      <ConfettiComponent count={60} />
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
       {/* Gated Model Warning */}
       {needsHfAuth && (
         <div className="rounded-lg bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 p-4">
@@ -330,21 +389,29 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
       {/* Advanced Options */}
       <Card>
         <CardHeader
-          className="cursor-pointer"
+          className="cursor-pointer select-none"
           onClick={() => setShowAdvanced(!showAdvanced)}
         >
           <div className="flex items-center justify-between">
             <CardTitle>Advanced Options</CardTitle>
-            {showAdvanced ? (
-              <ChevronUp className="h-5 w-5 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-5 w-5 text-muted-foreground" />
-            )}
+            <ChevronDown 
+              className={cn(
+                "h-5 w-5 text-muted-foreground transition-transform duration-200 ease-out",
+                showAdvanced && "rotate-180"
+              )} 
+            />
           </div>
         </CardHeader>
 
-        {showAdvanced && (
-          <CardContent className="space-y-4">
+        {/* Smooth accordion animation */}
+        <div 
+          className={cn(
+            "grid transition-all duration-300 ease-out-expo",
+            showAdvanced ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+          )}
+        >
+          <div className="overflow-hidden">
+            <CardContent className="space-y-4 pt-0">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Enforce Eager Mode</Label>
@@ -394,8 +461,9 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
                 onChange={(e) => updateConfig('contextLength', e.target.value ? parseInt(e.target.value) : undefined)}
               />
             </div>
-          </CardContent>
-        )}
+            </CardContent>
+          </div>
+        </div>
       </Card>
 
       {/* Submit Button */}
@@ -409,21 +477,17 @@ export function DeploymentForm({ model }: DeploymentFormProps) {
         </Button>
         <Button
           type="submit"
-          disabled={createDeployment.isPending || needsHfAuth}
-          className="flex-1"
-        >
-          {createDeployment.isPending ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Deploying...
-            </>
-          ) : needsHfAuth ? (
-            'HuggingFace Auth Required'
-          ) : (
-            'Deploy Model'
+          disabled={createDeployment.isProcessing || needsHfAuth}
+          loading={createDeployment.isProcessing}
+          className={cn(
+            "flex-1 gap-2",
+            createDeployment.status === 'success' && "bg-green-600 hover:bg-green-600"
           )}
+        >
+          {getButtonContent()}
         </Button>
       </div>
     </form>
+    </>
   )
 }
