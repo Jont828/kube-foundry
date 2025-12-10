@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useHuggingFaceOAuth, useExchangeHuggingFaceToken, useSaveHuggingFaceToken } from '@/hooks/useHuggingFace';
+import { useHuggingFaceOAuth, useExchangeHuggingFaceToken, useSaveHuggingFaceToken, saveHfAccessToken } from '@/hooks/useHuggingFace';
 import { useToast } from '@/hooks/useToast';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,9 +19,17 @@ export function HuggingFaceCallbackPage() {
   const [status, setStatus] = useState<CallbackStatus>('processing');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [username, setUsername] = useState<string>('');
+  
+  // Prevent duplicate processing (React Strict Mode runs effects twice)
+  const processedRef = useRef(false);
 
   useEffect(() => {
     const processCallback = async () => {
+      // Skip if already processed
+      if (processedRef.current) {
+        return;
+      }
+      processedRef.current = true;
       // Check for error from HuggingFace
       const error = searchParams.get('error');
       const errorDescription = searchParams.get('error_description');
@@ -57,6 +65,9 @@ export function HuggingFaceCallbackPage() {
         const tokenResponse = await exchangeToken.mutateAsync({ code, redirectUri });
 
         setUsername(tokenResponse.user.name);
+
+        // Save token to localStorage for frontend use (model searches, etc.)
+        saveHfAccessToken(tokenResponse.accessToken);
 
         // Save token to K8s secrets
         await saveToken.mutateAsync(tokenResponse.accessToken);
