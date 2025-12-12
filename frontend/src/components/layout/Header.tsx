@@ -73,16 +73,6 @@ export function Header() {
             )}
           </div>
 
-          {/* Provider badge - hide on smallest screens */}
-          {clusterStatus?.provider && (
-            <Badge 
-              variant={providerInstalled ? 'outline' : 'destructive'}
-              className="hidden md:inline-flex"
-            >
-              {clusterStatus.provider.name}
-            </Badge>
-          )}
-
           {/* Cluster name - hide on small screens */}
           {clusterStatus?.clusterName && (
             <Badge variant="outline" className="hidden lg:inline-flex max-w-[150px]">

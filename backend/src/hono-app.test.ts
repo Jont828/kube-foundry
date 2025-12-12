@@ -85,6 +85,29 @@ describe('Hono Routes', () => {
     });
   });
 
+  describe('Runtimes Routes', () => {
+    test('GET /api/runtimes/status returns runtimes status', async () => {
+      const res = await app.request('/api/runtimes/status');
+      // May succeed or fail depending on k8s availability
+      const status = res.status;
+      expect([200, 500]).toContain(status);
+      
+      if (status === 200) {
+        const data = await res.json();
+        expect(data.runtimes).toBeDefined();
+        expect(Array.isArray(data.runtimes)).toBe(true);
+        // Should have both dynamo and kuberay runtimes
+        expect(data.runtimes.length).toBeGreaterThanOrEqual(2);
+        for (const runtime of data.runtimes) {
+          expect(runtime.id).toBeDefined();
+          expect(runtime.name).toBeDefined();
+          expect(typeof runtime.installed).toBe('boolean');
+          expect(typeof runtime.healthy).toBe('boolean');
+        }
+      }
+    });
+  });
+
   describe('Installation Routes', () => {
     test('GET /api/installation/helm/status returns helm status', async () => {
       const res = await app.request('/api/installation/helm/status');
