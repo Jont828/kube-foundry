@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRuntimesStatus } from '@/hooks/useRuntimes'
 import { useClusterStatus } from '@/hooks/useClusterStatus'
 import {
@@ -35,18 +35,35 @@ export function InstallationPage() {
   const { data: autoscaler, isLoading: autoscalerLoading } = useAutoscalerDetection()
   const { toast } = useToast()
 
-  const [selectedRuntime, setSelectedRuntime] = useState<RuntimeId>('dynamo')
+  const [selectedRuntime, setSelectedRuntime] = useState<RuntimeId | null>(null)
+  
+  // Set default runtime once data is loaded: prefer installed runtime
+  useEffect(() => {
+    if (runtimesStatus?.runtimes && selectedRuntime === null) {
+      const runtimes = runtimesStatus.runtimes
+      // Prefer first installed runtime, otherwise default to dynamo
+      const installedRuntime = runtimes.find(r => r.installed)
+      if (installedRuntime) {
+        setSelectedRuntime(installedRuntime.id as RuntimeId)
+      } else {
+        setSelectedRuntime('dynamo')
+      }
+    }
+  }, [runtimesStatus, selectedRuntime])
   const {
     data: installationStatus,
     isLoading: installationLoading,
     refetch: refetchInstallation,
-  } = useProviderInstallationStatus(selectedRuntime)
+  } = useProviderInstallationStatus(selectedRuntime || 'dynamo')
 
   const installProvider = useInstallProvider()
 
   const [isInstalling, setIsInstalling] = useState(false)
   
   const runtimes = runtimesStatus?.runtimes || []
+  
+  // Don't render runtime-specific content until we have a selection
+  const effectiveRuntime = selectedRuntime || 'dynamo'
 
   const handleInstall = async (providerId: RuntimeId) => {
     setIsInstalling(true)
@@ -179,7 +196,7 @@ export function InstallationPage() {
               key={runtime.id}
               className={cn(
                 'transition-all cursor-pointer',
-                selectedRuntime === runtime.id 
+                effectiveRuntime === runtime.id 
                   ? 'ring-2 ring-primary' 
                   : 'hover:border-primary/50'
               )}
@@ -316,7 +333,7 @@ export function InstallationPage() {
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Download className="h-5 w-5" />
-              {installationStatus?.providerName || runtimes.find(r => r.id === selectedRuntime)?.name || 'Runtime'} Installation
+              {installationStatus?.providerName || runtimes.find(r => r.id === effectiveRuntime)?.name || 'Runtime'} Installation
             </div>
             <Badge variant={isInstalled ? 'default' : 'destructive'}>
               {isInstalled ? 'Installed' : 'Not Installed'}
@@ -357,7 +374,7 @@ export function InstallationPage() {
               <div className="flex gap-3">
                 {!isInstalled && (
                   <Button
-                    onClick={() => handleInstall(selectedRuntime)}
+                    onClick={() => handleInstall(effectiveRuntime)}
                     disabled={isInstalling || !helmAvailable || !clusterStatus?.connected}
                     className="flex items-center gap-2"
                   >
@@ -369,7 +386,7 @@ export function InstallationPage() {
                     ) : (
                       <>
                         <Download className="h-4 w-4" />
-                        Install {runtimes.find(r => r.id === selectedRuntime)?.name || 'Runtime'}
+                        Install {runtimes.find(r => r.id === effectiveRuntime)?.name || 'Runtime'}
                       </>
                     )}
                   </Button>
@@ -409,7 +426,7 @@ export function InstallationPage() {
             <CardTitle className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Terminal className="h-5 w-5" />
-                Manual Installation Commands for {runtimes.find(r => r.id === selectedRuntime)?.name || 'Runtime'}
+                Manual Installation Commands for {runtimes.find(r => r.id === effectiveRuntime)?.name || 'Runtime'}
               </div>
               <Button variant="outline" size="sm" onClick={copyAllCommands}>
                 <Copy className="h-4 w-4 mr-2" />
