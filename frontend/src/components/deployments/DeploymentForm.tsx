@@ -10,10 +10,11 @@ import { Badge } from '@/components/ui/badge'
 import { useConfetti } from '@/components/ui/confetti'
 import { useCreateDeployment, type DeploymentConfig } from '@/hooks/useDeployments'
 import { useHuggingFaceStatus } from '@/hooks/useHuggingFace'
+import { usePremadeModels } from '@/hooks/useAikit'
 import { useToast } from '@/hooks/useToast'
 import { generateDeploymentName, cn } from '@/lib/utils'
-import { type Model, type DetailedClusterCapacity, type AutoscalerDetectionResult, type RuntimeStatus } from '@/lib/api'
-import { ChevronDown, AlertCircle, Rocket, CheckCircle2, Sparkles, AlertTriangle, Server } from 'lucide-react'
+import { type Model, type DetailedClusterCapacity, type AutoscalerDetectionResult, type RuntimeStatus, type PremadeModel } from '@/lib/api'
+import { ChevronDown, AlertCircle, Rocket, CheckCircle2, Sparkles, AlertTriangle, Server, Cpu, Box } from 'lucide-react'
 import { CapacityWarning } from './CapacityWarning'
 import { calculateGpuRecommendation } from '@/lib/gpu-recommendations'
 
@@ -27,7 +28,8 @@ interface DeploymentFormProps {
 type Engine = 'vllm' | 'sglang' | 'trtllm'
 type RouterMode = 'none' | 'kv' | 'round-robin'
 type DeploymentMode = 'aggregated' | 'disaggregated'
-type RuntimeId = 'dynamo' | 'kuberay'
+type RuntimeId = 'dynamo' | 'kuberay' | 'kaito'
+type KaitoComputeType = 'cpu' | 'gpu'
 
 // Runtime metadata for display
 const RUNTIME_INFO: Record<RuntimeId, { name: string; description: string; defaultNamespace: string }> = {
@@ -41,12 +43,29 @@ const RUNTIME_INFO: Record<RuntimeId, { name: string; description: string; defau
     description: 'Ray-based serving with autoscaling and distributed inference',
     defaultNamespace: 'kuberay-system',
   },
+  kaito: {
+    name: 'KAITO',
+    description: 'CPU-capable inference with pre-built GGUF models via llama.cpp',
+    defaultNamespace: 'default',
+  },
 }
 
 // Engine support by runtime
 const RUNTIME_ENGINES: Record<RuntimeId, Engine[]> = {
   dynamo: ['vllm', 'sglang', 'trtllm'],
   kuberay: ['vllm'], // KubeRay only supports vLLM currently
+  kaito: [], // KAITO uses llama.cpp, not traditional engines
+}
+
+// Check if a runtime is compatible with a model based on engine support
+function isRuntimeCompatible(runtimeId: RuntimeId, modelEngines: string[]): boolean {
+  // KAITO models (llamacpp engine) are only compatible with KAITO runtime
+  if (modelEngines.includes('llamacpp')) {
+    return runtimeId === 'kaito';
+  }
+  // Other models need at least one matching engine with the runtime
+  const runtimeEngines = RUNTIME_ENGINES[runtimeId];
+  return modelEngines.some(e => runtimeEngines.includes(e as Engine));
 }
 
 export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }: DeploymentFormProps) {
@@ -54,6 +73,7 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
   const { toast } = useToast()
   const createDeployment = useCreateDeployment()
   const { data: hfStatus } = useHuggingFaceStatus()
+  const { data: premadeModels, isLoading: premadeModelsLoading } = usePremadeModels()
   const formRef = useRef<HTMLFormElement>(null)
   const { trigger: triggerConfetti, ConfettiComponent } = useConfetti(2500)
 
@@ -61,19 +81,40 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
   const isGatedModel = model.gated === true
   const needsHfAuth = isGatedModel && !hfStatus?.configured
 
-  // Determine default runtime: prefer Dynamo if installed, then KubeRay
+  // Determine default runtime: prefer compatible and installed runtime
   const getDefaultRuntime = (): RuntimeId => {
-    if (!runtimes || runtimes.length === 0) return 'dynamo'
-    const dynamo = runtimes.find(r => r.id === 'dynamo')
-    if (dynamo?.installed) return 'dynamo'
-    const kuberay = runtimes.find(r => r.id === 'kuberay')
-    if (kuberay?.installed) return 'kuberay'
-    return 'dynamo'
+    if (!runtimes || runtimes.length === 0) {
+      // Fallback based on model engines
+      return model.supportedEngines.includes('llamacpp') ? 'kaito' : 'dynamo';
+    }
+    
+    // Find first compatible and installed runtime
+    const compatibleRuntimes: RuntimeId[] = ['dynamo', 'kuberay', 'kaito'];
+    for (const rtId of compatibleRuntimes) {
+      const rt = runtimes.find(r => r.id === rtId);
+      if (rt?.installed && isRuntimeCompatible(rtId, model.supportedEngines as string[])) {
+        return rtId;
+      }
+    }
+    
+    // If no compatible installed runtime, return first compatible one
+    for (const rtId of compatibleRuntimes) {
+      if (isRuntimeCompatible(rtId, model.supportedEngines as string[])) {
+        return rtId;
+      }
+    }
+    
+    return 'dynamo';
   }
 
   const [selectedRuntime, setSelectedRuntime] = useState<RuntimeId>(getDefaultRuntime)
   const selectedRuntimeStatus = runtimes?.find(r => r.id === selectedRuntime)
   const isRuntimeInstalled = selectedRuntimeStatus?.installed ?? false
+
+  // KAITO-specific state
+  const [kaitoComputeType, setKaitoComputeType] = useState<KaitoComputeType>('cpu')
+  const [selectedPremadeModel, setSelectedPremadeModel] = useState<PremadeModel | null>(null)
+  const [preferredNodes, setPreferredNodes] = useState<string>('')
 
   // Get supported engines for the selected runtime, filtered by model support
   const getAvailableEngines = (): Engine[] => {
@@ -124,6 +165,24 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
     }
   }, [gpuRecommendation.recommendedGpus])
 
+  // Auto-select matching premade model when navigating with a KAITO model from Models page
+  useEffect(() => {
+    if (premadeModels && premadeModels.length > 0 && !selectedPremadeModel) {
+      // Try to match model.id (e.g., 'kaito/llama3.2-1b') to premade model id (e.g., 'llama3.2:1b')
+      const modelIdWithoutPrefix = model.id.replace('kaito/', '').replace('-', ':');
+      const matchingPremade = premadeModels.find(pm => pm.id === modelIdWithoutPrefix);
+      if (matchingPremade) {
+        setSelectedPremadeModel(matchingPremade);
+        setConfig(prev => ({
+          ...prev,
+          name: generateDeploymentName(matchingPremade.id),
+          modelId: matchingPremade.id,
+          servedModelName: matchingPremade.modelName,
+        }));
+      }
+    }
+  }, [premadeModels, model.id, selectedPremadeModel])
+
   // Handle runtime change - update namespace and engine
   const handleRuntimeChange = (runtime: RuntimeId) => {
     setSelectedRuntime(runtime)
@@ -138,6 +197,24 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
       engine: currentEngineSupported ? prev.engine : (newAvailableEngines[0] || 'vllm'),
       // Reset router mode if switching away from Dynamo
       routerMode: runtime === 'dynamo' ? prev.routerMode : 'none',
+    }))
+
+    // Reset KAITO-specific state when switching away from KAITO
+    if (runtime !== 'kaito') {
+      setSelectedPremadeModel(null)
+      setKaitoComputeType('cpu')
+      setPreferredNodes('')
+    }
+  }
+
+  // Handle premade model selection for KAITO
+  const handlePremadeModelSelect = (premadeModel: PremadeModel) => {
+    setSelectedPremadeModel(premadeModel)
+    setConfig(prev => ({
+      ...prev,
+      name: generateDeploymentName(premadeModel.id),
+      modelId: premadeModel.id,
+      servedModelName: premadeModel.modelName,
     }))
   }
 
@@ -160,7 +237,26 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
     e.preventDefault()
 
     try {
-      await createDeployment.mutateAsync(config)
+      // Build the deployment config, adding KAITO-specific fields if needed
+      let deployConfig = { ...config }
+      
+      if (selectedRuntime === 'kaito') {
+        // Parse preferred nodes from comma-separated string
+        const nodesList = preferredNodes
+          .split(',')
+          .map(n => n.trim())
+          .filter(n => n.length > 0)
+        
+        deployConfig = {
+          ...deployConfig,
+          modelSource: 'premade',
+          computeType: kaitoComputeType,
+          premadeModel: selectedPremadeModel?.id,
+          ...(nodesList.length > 0 && { preferredNodes: nodesList }),
+        }
+      }
+
+      await createDeployment.mutateAsync(deployConfig)
 
       // Trigger confetti celebration!
       triggerConfetti()
@@ -182,7 +278,7 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
         variant: 'destructive',
       })
     }
-  }, [config, createDeployment, navigate, toast, triggerConfetti])
+  }, [config, createDeployment, navigate, toast, triggerConfetti, selectedRuntime, kaitoComputeType, selectedPremadeModel])
 
   const updateConfig = <K extends keyof DeploymentConfig>(
     key: K,
@@ -212,14 +308,21 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
     ? Math.max(config.prefillGpus || 1, config.decodeGpus || 1)
     : (config.resources?.gpu || gpuRecommendation.recommendedGpus || 1);
 
+  // Check if KAITO configuration is valid
+  const isKaitoConfigValid = selectedRuntime !== 'kaito' || selectedPremadeModel !== null
+
   // Status-aware button content
   const getButtonContent = () => {
-    if (needsHfAuth) {
+    if (needsHfAuth && selectedRuntime !== 'kaito') {
       return 'HuggingFace Auth Required'
     }
 
     if (!isRuntimeInstalled) {
       return 'Runtime Not Installed'
+    }
+
+    if (selectedRuntime === 'kaito' && !selectedPremadeModel) {
+      return 'Select a Model'
     }
 
     switch (createDeployment.status) {
@@ -295,25 +398,45 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
                 const info = RUNTIME_INFO[runtime.id as RuntimeId]
                 if (!info) return null
                 
+                const isCompatible = isRuntimeCompatible(runtime.id as RuntimeId, model.supportedEngines as string[])
+                
                 return (
                   <div
                     key={runtime.id}
                     className={cn(
-                      "relative flex items-start space-x-3 rounded-lg border p-4 cursor-pointer transition-colors",
-                      selectedRuntime === runtime.id
+                      "relative flex items-start space-x-3 rounded-lg border p-4 transition-colors",
+                      !isCompatible && "opacity-50 cursor-not-allowed",
+                      isCompatible && "cursor-pointer",
+                      isCompatible && selectedRuntime === runtime.id
                         ? "border-primary bg-primary/5"
-                        : "border-border hover:border-muted-foreground/50",
-                      !runtime.installed && "opacity-75"
+                        : "border-border",
+                      isCompatible && selectedRuntime !== runtime.id && "hover:border-muted-foreground/50",
+                      isCompatible && !runtime.installed && "opacity-75"
                     )}
-                    onClick={() => handleRuntimeChange(runtime.id as RuntimeId)}
+                    onClick={() => isCompatible && handleRuntimeChange(runtime.id as RuntimeId)}
                   >
-                    <RadioGroupItem value={runtime.id} id={`runtime-${runtime.id}`} className="mt-1" />
+                    <RadioGroupItem 
+                      value={runtime.id} 
+                      id={`runtime-${runtime.id}`} 
+                      className="mt-1" 
+                      disabled={!isCompatible}
+                    />
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center gap-2">
-                        <Label htmlFor={`runtime-${runtime.id}`} className="cursor-pointer font-medium">
+                        <Label 
+                          htmlFor={`runtime-${runtime.id}`} 
+                          className={cn(
+                            "font-medium",
+                            isCompatible ? "cursor-pointer" : "cursor-not-allowed"
+                          )}
+                        >
                           {info.name}
                         </Label>
-                        {runtime.installed ? (
+                        {!isCompatible ? (
+                          <Badge variant="outline" className="text-muted-foreground border-muted text-xs">
+                            Not Compatible
+                          </Badge>
+                        ) : runtime.installed ? (
                           <Badge variant="outline" className="text-green-600 border-green-500 text-xs">
                             <CheckCircle2 className="h-3 w-3 mr-1" />
                             Installed
@@ -328,7 +451,12 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
                       <p className="text-xs text-muted-foreground">
                         {info.description}
                       </p>
-                      {!runtime.installed && selectedRuntime === runtime.id && (
+                      {!isCompatible && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          This model requires {model.supportedEngines.includes('llamacpp') ? 'llama.cpp' : model.supportedEngines.join('/')} which is not supported by this runtime.
+                        </p>
+                      )}
+                      {isCompatible && !runtime.installed && selectedRuntime === runtime.id && (
                         <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
                           <Link to="/installation" className="underline hover:no-underline">
                             Install {info.name}
@@ -381,7 +509,8 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
         </CardContent>
       </Card>
 
-      {/* Engine Selection */}
+      {/* Engine Selection - only show for non-KAITO runtimes */}
+      {selectedRuntime !== 'kaito' && (
       <Card>
         <CardHeader>
           <CardTitle>Inference Engine</CardTitle>
@@ -411,8 +540,69 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
           )}
         </CardContent>
       </Card>
+      )}
 
-      {/* Deployment Mode */}
+      {/* KAITO Model Selection - only show for KAITO runtime */}
+      {selectedRuntime === 'kaito' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Box className="h-5 w-5" />
+              KAITO Model Configuration
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Compute Type Selection */}
+            <div className="space-y-3">
+              <Label>Compute Type</Label>
+              <RadioGroup
+                value={kaitoComputeType}
+                onValueChange={(value) => setKaitoComputeType(value as KaitoComputeType)}
+                className="flex gap-4"
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="cpu" id="compute-cpu" />
+                  <Label htmlFor="compute-cpu" className="cursor-pointer flex items-center gap-1">
+                    <Cpu className="h-4 w-4" />
+                    CPU
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="gpu" id="compute-gpu" />
+                  <Label htmlFor="compute-gpu" className="cursor-pointer flex items-center gap-1">
+                    <Server className="h-4 w-4" />
+                    GPU
+                  </Label>
+                </div>
+              </RadioGroup>
+              <p className="text-xs text-muted-foreground">
+                {kaitoComputeType === 'cpu' 
+                  ? 'Run inference on CPU nodes - slower but no GPU required'
+                  : 'Run inference on GPU nodes - faster performance'}
+              </p>
+            </div>
+
+            {/* Preferred Nodes Input */}
+            <div className="space-y-3">
+              <Label htmlFor="preferredNodes">Preferred Nodes (Optional)</Label>
+              <Input
+                id="preferredNodes"
+                type="text"
+                placeholder="e.g., node-1, node-2"
+                value={preferredNodes}
+                onChange={(e) => setPreferredNodes(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Specify existing Kubernetes node names to use for deployment (comma-separated).
+                If empty, KAITO will schedule on any available node matching the label selector.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Deployment Mode - only show for non-KAITO runtimes */}
+      {selectedRuntime !== 'kaito' && (
       <Card>
         <CardHeader>
           <CardTitle>Deployment Mode</CardTitle>
@@ -448,8 +638,10 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
           </RadioGroup>
         </CardContent>
       </Card>
+      )}
 
-      {/* Deployment Options */}
+      {/* Deployment Options - only show for non-KAITO runtimes */}
+      {selectedRuntime !== 'kaito' && (
       <Card>
         <CardHeader>
           <CardTitle>Deployment Options</CardTitle>
@@ -597,8 +789,56 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
           )}
         </CardContent>
       </Card>
+      )}
 
-      {/* Advanced Options */}
+      {/* KAITO Deployment Options */}
+      {selectedRuntime === 'kaito' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Deployment Options</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="kaito-replicas">Replicas</Label>
+                <Input
+                  id="kaito-replicas"
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={config.replicas}
+                  onChange={(e) => updateConfig('replicas', parseInt(e.target.value) || 1)}
+                />
+              </div>
+              {kaitoComputeType === 'gpu' && (
+                <div className="space-y-2">
+                  <Label htmlFor="kaito-gpus">GPUs per Replica</Label>
+                  <Input
+                    id="kaito-gpus"
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={config.resources?.gpu || 1}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value) || 1
+                      setConfig(prev => ({
+                        ...prev,
+                        resources: {
+                          ...prev.resources,
+                          gpu: value
+                        }
+                      }))
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Advanced Options - only show for non-KAITO runtimes */}
+      {selectedRuntime !== 'kaito' && (
       <Card>
         <CardHeader
           className="cursor-pointer select-none"
@@ -677,9 +917,10 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
           </div>
         </div>
       </Card>
+      )}
 
-        {/* Capacity Warning */}
-        {detailedCapacity && (
+        {/* Capacity Warning - only show for non-KAITO or KAITO with GPU */}
+        {detailedCapacity && (selectedRuntime !== 'kaito' || kaitoComputeType === 'gpu') && (
           <CapacityWarning
             selectedGpus={selectedGpus}
             capacity={detailedCapacity}
@@ -702,7 +943,7 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
         </Button>
         <Button
           type="submit"
-          disabled={createDeployment.isProcessing || needsHfAuth || !isRuntimeInstalled}
+          disabled={createDeployment.isProcessing || (needsHfAuth && selectedRuntime !== 'kaito') || !isRuntimeInstalled || !isKaitoConfigValid}
           loading={createDeployment.isProcessing}
           className={cn(
             "flex-1 gap-2",

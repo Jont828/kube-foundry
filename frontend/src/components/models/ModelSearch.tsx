@@ -2,8 +2,7 @@ import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-
-type Engine = 'vllm' | 'sglang' | 'trtllm'
+import type { Engine } from '@shared/types'
 
 interface ModelSearchProps {
   search: string
@@ -16,6 +15,7 @@ const engines: { value: Engine; label: string }[] = [
   { value: 'vllm', label: 'vLLM' },
   { value: 'sglang', label: 'SGLang' },
   { value: 'trtllm', label: 'TensorRT-LLM' },
+  { value: 'llamacpp', label: 'Llama.cpp' },
 ]
 
 export function ModelSearch({

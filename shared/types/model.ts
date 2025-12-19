@@ -1,4 +1,4 @@
-export type Engine = 'vllm' | 'sglang' | 'trtllm';
+export type Engine = 'vllm' | 'sglang' | 'trtllm' | 'llamacpp';
 export type ModelTask = 'text-generation' | 'chat' | 'fill-mask';
 
 export interface Model {

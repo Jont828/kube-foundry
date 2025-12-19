@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { HTTPException } from 'hono/http-exception';
 import { kubernetesService } from '../services/kubernetes';
+import { configService } from '../services/config';
 import { providerRegistry } from '../providers';
 import { metricsService } from '../services/metrics';
 import { validateGpuFit, formatGpuWarnings } from '../services/gpuValidation';

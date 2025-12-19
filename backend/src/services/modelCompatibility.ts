@@ -97,6 +97,34 @@ const ENGINE_ARCHITECTURE_ALLOWLIST: Record<Engine, string[]> = {
     'BaichuanForCausalLM',
     'ChatGLMModel',
   ],
+  llamacpp: [
+    // llama.cpp supports GGUF quantized models - very broad architecture support
+    // Used by KAITO/AIKit for CPU-capable inference
+    'LlamaForCausalLM',
+    'MistralForCausalLM',
+    'MixtralForCausalLM',
+    'Qwen2ForCausalLM',
+    'Qwen2MoeForCausalLM',
+    'Qwen3ForCausalLM',
+    'GPT2LMHeadModel',
+    'GPTNeoForCausalLM',
+    'GPTNeoXForCausalLM',
+    'PhiForCausalLM',
+    'Phi3ForCausalLM',
+    'GemmaForCausalLM',
+    'Gemma2ForCausalLM',
+    'FalconForCausalLM',
+    'StableLmForCausalLM',
+    'StarCoder2ForCausalLM',
+    'BloomForCausalLM',
+    'MPTForCausalLM',
+    'InternLMForCausalLM',
+    'InternLM2ForCausalLM',
+    'DeepseekV2ForCausalLM',
+    'OlmoForCausalLM',
+    'Olmo2ForCausalLM',
+    'MiniCPMForCausalLM',
+  ],
 };
 
 /**
@@ -161,7 +189,7 @@ export function inferArchitectureFromModelId(modelId: string): string[] {
 export function getSupportedEngines(architectures: string[]): Engine[] {
   const engines: Engine[] = [];
   
-  for (const engine of ['vllm', 'sglang', 'trtllm'] as Engine[]) {
+  for (const engine of ['vllm', 'sglang', 'trtllm', 'llamacpp'] as Engine[]) {
     const allowlist = ENGINE_ARCHITECTURE_ALLOWLIST[engine];
     const isSupported = architectures.some(arch => allowlist.includes(arch));
     if (isSupported) {

@@ -126,15 +126,21 @@ export function DeploymentList({ deployments, isLoading }: DeploymentListProps) 
                 </td>
                 <td className="px-4 py-3 hidden sm:table-cell">
                   <Badge variant="outline">
-                    {deployment.engine.toUpperCase()}
+                    {deployment.engine === 'llamacpp' ? 'Llama.cpp' : deployment.engine.toUpperCase()}
                   </Badge>
                 </td>
                 <td className="px-4 py-3 hidden lg:table-cell">
                   <Badge 
                     variant="secondary" 
-                    className={deployment.provider === 'kuberay' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300'}
+                    className={
+                      deployment.provider === 'kuberay' 
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' 
+                        : deployment.provider === 'kaito'
+                        ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
+                        : 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300'
+                    }
                   >
-                    {deployment.provider === 'kuberay' ? 'KubeRay' : 'Dynamo'}
+                    {deployment.provider === 'kuberay' ? 'KubeRay' : deployment.provider === 'kaito' ? 'KAITO' : 'Dynamo'}
                   </Badge>
                 </td>
                 <td className="px-4 py-3">

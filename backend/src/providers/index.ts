@@ -1,6 +1,7 @@
 import type { Provider, ProviderInfo } from './types';
 import { dynamoProvider } from './dynamo';
 import { kuberayProvider } from './kuberay';
+import { kaitoProvider } from './kaito';
 import logger from '../lib/logger';
 
 // Re-export types
@@ -17,6 +18,7 @@ class ProviderRegistry {
     // Register built-in providers
     this.register(dynamoProvider);
     this.register(kuberayProvider);
+    this.register(kaitoProvider);
   }
 
   /**
