@@ -188,7 +188,7 @@ export const handlers = [
     return HttpResponse.json({
       ...provider,
       crdConfig: {
-        apiGroup: 'dynamo.nvidia.com',
+        apiGroup: 'nvidia.com',
         apiVersion: 'v1alpha1',
         plural: 'dynamographdeployments',
         kind: 'DynamoGraphDeployment',

@@ -29,6 +29,8 @@ export interface HelmChart {
   namespace: string;
   values?: Record<string, unknown>;
   createNamespace?: boolean;
+  /** Optional: Direct URL to fetch the chart tarball (for charts not in repos) */
+  fetchUrl?: string;
 }
 
 /**
@@ -127,6 +129,12 @@ export interface Provider {
    * These define which Prometheus metrics to extract and how to display them.
    */
   getKeyMetrics(): MetricDefinition[];
+
+  /**
+   * Optional: Refresh version information from external source (e.g., GitHub releases)
+   * Should be called before installation to ensure latest version is used
+   */
+  refreshVersion?(): Promise<string>;
 }
 
 /**

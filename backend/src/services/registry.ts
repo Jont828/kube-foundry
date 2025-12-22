@@ -4,11 +4,13 @@ import { withRetry } from '../lib/retry';
 
 /**
  * In-cluster registry configuration
+ * Uses NodePort to allow kubelets (running on nodes) to access the registry
  */
 export const REGISTRY_CONFIG = {
   name: 'kubefoundry-registry',
   namespace: 'kubefoundry-system',
   port: 5000,
+  nodePort: 30500, // NodePort for kubelet access
   image: 'registry:2',
   storageSize: '10Gi',
 } as const;
@@ -44,17 +46,32 @@ class RegistryService {
   }
 
   /**
-   * Get the in-cluster registry URL
+   * Get the in-cluster registry URL for buildx push (uses ClusterIP service name)
    */
   getRegistryUrl(): string {
     return `${REGISTRY_CONFIG.name}.${REGISTRY_CONFIG.namespace}.svc:${REGISTRY_CONFIG.port}`;
   }
 
   /**
-   * Get the full image reference for a given image name and tag
+   * Get the registry URL for kubelet image pulls (uses localhost + NodePort)
+   * Kubelets run on nodes and can access NodePort services via localhost
+   */
+  getKubeletRegistryUrl(): string {
+    return `localhost:${REGISTRY_CONFIG.nodePort}`;
+  }
+
+  /**
+   * Get the full image reference for buildx push (uses cluster-internal URL)
    */
   getImageRef(imageName: string, imageTag: string): string {
     return `${this.getRegistryUrl()}/${imageName}:${imageTag}`;
+  }
+
+  /**
+   * Get the full image reference for kubelet pulls (uses localhost + NodePort)
+   */
+  getKubeletImageRef(imageName: string, imageTag: string): string {
+    return `${this.getKubeletRegistryUrl()}/${imageName}:${imageTag}`;
   }
 
   /**
@@ -287,7 +304,7 @@ class RegistryService {
         },
       },
       spec: {
-        type: 'ClusterIP',
+        type: 'NodePort',
         selector: {
           app: REGISTRY_CONFIG.name,
         },
@@ -296,6 +313,7 @@ class RegistryService {
             name: 'registry',
             port: REGISTRY_CONFIG.port,
             targetPort: REGISTRY_CONFIG.port as any,
+            nodePort: REGISTRY_CONFIG.nodePort,
             protocol: 'TCP',
           },
         ],

@@ -7,8 +7,8 @@ import { HfModelSearch } from '@/components/models/HfModelSearch'
 import { SkeletonGrid } from '@/components/ui/skeleton'
 import { BookMarked, Search, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import type { Engine } from '@kubefoundry/shared'
 
-type Engine = 'vllm' | 'sglang' | 'trtllm'
 type Tab = 'curated' | 'huggingface'
 
 export function ModelsPage() {

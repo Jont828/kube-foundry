@@ -44,6 +44,23 @@ const modelsRoute = new Hono()
       });
     }
   })
+  .get('/:modelId{.+}/gguf-files', async (c) => {
+    const modelId = c.req.param('modelId');
+    
+    // Extract HuggingFace token from Authorization header if present
+    const authHeader = c.req.header('Authorization');
+    const hfToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+
+    try {
+      const ggufFiles = await huggingFaceService.getGgufFiles(modelId, hfToken);
+      return c.json({ files: ggufFiles });
+    } catch (error) {
+      logger.error({ error, modelId }, 'Failed to fetch GGUF files');
+      throw new HTTPException(500, {
+        message: error instanceof Error ? error.message : 'Failed to fetch GGUF files',
+      });
+    }
+  })
   .get('/:id{.+}', (c) => {
     const modelId = c.req.param('id');
     const model = models.models.find((m) => m.id === modelId);

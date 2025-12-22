@@ -19,7 +19,7 @@ describe('generateDynamoManifest', () => {
   describe('manifest structure', () => {
     it('generates correct apiVersion and kind', () => {
       const manifest = generateDynamoManifest(baseConfig);
-      expect(manifest.apiVersion).toBe('dynamo.nvidia.com/v1alpha1');
+      expect(manifest.apiVersion).toBe('nvidia.com/v1alpha1');
       expect(manifest.kind).toBe('DynamoGraphDeployment');
     });
 
@@ -208,7 +208,7 @@ describe('generateDynamoManifest', () => {
 
 describe('validateManifest', () => {
   const validManifest = {
-    apiVersion: 'dynamo.nvidia.com/v1alpha1',
+    apiVersion: 'nvidia.com/v1alpha1',
     kind: 'DynamoGraphDeployment',
     metadata: {
       name: 'test',

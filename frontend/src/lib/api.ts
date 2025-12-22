@@ -39,6 +39,7 @@ export type {
   RouterMode,
   DeploymentPhase,
   PodPhase,
+  GgufRunMode,
   DeploymentConfig,
   PodStatus,
   DeploymentStatus,
@@ -100,6 +101,8 @@ export type {
   DetailedClusterCapacity,
   NodePoolInfo,
   PodFailureReason,
+  PodLogsOptions,
+  PodLogsResponse,
 } from '@kubefoundry/shared';
 
 // Import types for internal use
@@ -131,6 +134,7 @@ import type {
   DetailedClusterCapacity,
   PodFailureReason,
   RuntimesStatusResponse,
+  PodLogsResponse,
 } from '@kubefoundry/shared';
 
 // ============================================================================
@@ -233,6 +237,19 @@ export const deploymentsApi = {
     request<MetricsResponse>(
       `/deployments/${encodeURIComponent(name)}/metrics${namespace ? `?namespace=${encodeURIComponent(namespace)}` : ''}`
     ),
+
+  getLogs: (name: string, namespace?: string, options?: { podName?: string; container?: string; tailLines?: number; timestamps?: boolean }) => {
+    const params = new URLSearchParams();
+    if (namespace) params.set('namespace', namespace);
+    if (options?.podName) params.set('podName', options.podName);
+    if (options?.container) params.set('container', options.container);
+    if (options?.tailLines) params.set('tailLines', options.tailLines.toString());
+    if (options?.timestamps) params.set('timestamps', 'true');
+    const query = params.toString();
+    return request<PodLogsResponse>(
+      `/deployments/${encodeURIComponent(name)}/logs${query ? `?${query}` : ''}`
+    );
+  },
 };
 
 // ============================================================================
@@ -250,9 +267,16 @@ export const metricsApi = {
 // Health API
 // ============================================================================
 
+export interface ClusterNode {
+  name: string;
+  ready: boolean;
+  gpuCount: number;
+}
+
 export const healthApi = {
   check: () => request<{ status: string; timestamp: string }>('/health'),
   clusterStatus: () => request<ClusterStatusResponse>('/cluster/status'),
+  getClusterNodes: () => request<{ nodes: ClusterNode[] }>('/cluster/nodes'),
 };
 
 // ============================================================================
@@ -411,6 +435,17 @@ export const huggingFaceApi = {
       headers,
     });
   },
+
+  /** Get GGUF files available in a HuggingFace repository */
+  getGgufFiles: (modelId: string, hfToken?: string) => {
+    const headers: Record<string, string> = {};
+    if (hfToken) {
+      headers['Authorization'] = `Bearer ${hfToken}`;
+    }
+    return request<{ files: string[] }>(`/models/${encodeURIComponent(modelId)}/gguf-files`, {
+      headers,
+    });
+  },
 };
 
 // ============================================================================
@@ -452,6 +487,7 @@ export interface AikitBuildResult {
   buildTime: number;
   wasPremade: boolean;
   message: string;
+  error?: string;
 }
 
 /**

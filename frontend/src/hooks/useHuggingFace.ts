@@ -253,3 +253,22 @@ export function useHfModelSearch(
     placeholderData: (previousData) => previousData,
   });
 }
+
+/**
+ * Hook to fetch GGUF files from a HuggingFace repository
+ * 
+ * @param modelId - The HuggingFace model ID (e.g., 'unsloth/Qwen3-4B-GGUF')
+ * @param enabled - Whether to fetch (default: true when modelId is provided)
+ * @returns Query result with array of GGUF filenames
+ */
+export function useGgufFiles(modelId: string, enabled: boolean = true) {
+  const hfToken = getHfAccessToken();
+
+  return useQuery<{ files: string[] }>({
+    queryKey: ['huggingface', 'gguf-files', modelId],
+    queryFn: () => huggingFaceApi.getGgufFiles(modelId, hfToken ?? undefined),
+    enabled: enabled && modelId.length > 0,
+    staleTime: 300000, // 5 minutes - GGUF files don't change often
+    retry: 1,
+  });
+}

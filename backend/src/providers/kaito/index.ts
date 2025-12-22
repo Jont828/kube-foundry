@@ -2,7 +2,7 @@ import * as k8s from '@kubernetes/client-node';
 import type { DeploymentConfig, DeploymentStatus, DeploymentPhase, MetricDefinition, MetricsEndpointConfig } from '@kubefoundry/shared';
 import type { Provider, CRDConfig, HelmRepo, HelmChart, InstallationStatus, InstallationStep } from '../types';
 import { kaitoDeploymentConfigSchema, type KaitoDeploymentConfig } from './schema';
-import { aikitService } from '../../services/aikit';
+import { aikitService, GGUF_RUNNER_IMAGE } from '../../services/aikit';
 import logger from '../../lib/logger';
 
 /**
@@ -16,7 +16,7 @@ export class KaitoProvider implements Provider {
   id = 'kaito';
   name = 'KAITO';
   description = 'KAITO (Kubernetes AI Toolchain Operator) enables CPU and GPU inference using GGUF quantized models. Deploy models without GPU nodes using AIKit.';
-  defaultNamespace = 'default';
+  defaultNamespace = 'kaito-workspace';
 
   // CRD Constants
   private static readonly API_GROUP = 'kaito.sh';
@@ -37,14 +37,29 @@ export class KaitoProvider implements Provider {
     const kaitoConfig = config as KaitoDeploymentConfig;
 
     logger.debug(
-      { name: config.name, modelSource: kaitoConfig.modelSource, computeType: kaitoConfig.computeType },
+      { name: config.name, modelSource: kaitoConfig.modelSource, computeType: kaitoConfig.computeType, ggufRunMode: kaitoConfig.ggufRunMode },
       'Generating KAITO Workspace manifest'
     );
 
-    // Get image reference
-    const imageRef = this.getImageRef(kaitoConfig);
-    if (!imageRef) {
-      throw new Error('Unable to determine image reference for KAITO deployment');
+    // Determine image and args based on run mode
+    let containerImage: string;
+    let containerArgs: string[];
+
+    if (kaitoConfig.modelSource === 'huggingface' && kaitoConfig.ggufRunMode === 'direct') {
+      // Direct run mode - use runner image with huggingface:// URI
+      // Format: huggingface://org/repo/filename.gguf
+      containerImage = GGUF_RUNNER_IMAGE;
+      const modelUri = `huggingface://${kaitoConfig.modelId}/${kaitoConfig.ggufFile}`;
+      containerArgs = [modelUri, '--address=:5000'];
+      logger.debug({ image: containerImage, args: containerArgs, modelUri }, 'Using direct run mode with runner image');
+    } else {
+      // Build mode or premade - use the resolved image reference
+      const imageRef = this.getImageRef(kaitoConfig);
+      if (!imageRef) {
+        throw new Error('Unable to determine image reference for KAITO deployment');
+      }
+      containerImage = imageRef;
+      containerArgs = ['run', '--address=:5000'];
     }
 
     // Build resource requirements
@@ -79,6 +94,9 @@ export class KaitoProvider implements Provider {
           'app.kubernetes.io/managed-by': 'kubefoundry',
           'kubefoundry.io/compute-type': kaitoConfig.computeType,
           'kubefoundry.io/model-source': kaitoConfig.modelSource,
+          ...(kaitoConfig.modelSource === 'huggingface' && {
+            'kubefoundry.io/run-mode': kaitoConfig.ggufRunMode || 'direct',
+          }),
         },
       },
       resource: this.buildResourceSpec(kaitoConfig),
@@ -88,8 +106,8 @@ export class KaitoProvider implements Provider {
             containers: [
               {
                 name: 'model',
-                image: imageRef,
-                args: ['run', '--address=:5000'],
+                image: containerImage,
+                args: containerArgs,
                 ports: [
                   {
                     containerPort: 5000,
@@ -184,6 +202,7 @@ export class KaitoProvider implements Provider {
           spec?: {
             containers?: Array<{
               image?: string;
+              args?: string[];
             }>;
           };
         };
@@ -210,11 +229,24 @@ export class KaitoProvider implements Provider {
     // Determine model info from labels or inference spec
     const modelSource = labels['kubefoundry.io/model-source'] || 'unknown';
     const computeType = labels['kubefoundry.io/compute-type'] || 'cpu';
-    const imageRef = inference.template?.spec?.containers?.[0]?.image || '';
+    const runMode = labels['kubefoundry.io/run-mode'] || '';
+    const container = inference.template?.spec?.containers?.[0];
+    const imageRef = container?.image || '';
+    const containerArgs = container?.args || [];
 
-    // Extract model ID from image reference or labels
+    // Extract model ID from image reference, args, or labels
     let modelId = imageRef;
-    if (modelSource === 'premade') {
+    
+    if (runMode === 'direct' || imageRef === GGUF_RUNNER_IMAGE) {
+      // For direct mode, extract model name from huggingface:// URI in container args
+      // Format: huggingface://org/repo/filename.gguf
+      const hfArg = containerArgs.find(arg => arg.startsWith('huggingface://'));
+      if (hfArg) {
+        // Extract the filename from the URI (e.g., "gemma-3-1b-it-Q8_0.gguf")
+        const parts = hfArg.replace('huggingface://', '').split('/');
+        modelId = parts[parts.length - 1];
+      }
+    } else if (modelSource === 'premade') {
       // Try to find the premade model name from the image
       const premadeModel = aikitService.getPremadeModels().find(m => m.image === imageRef);
       if (premadeModel) {
@@ -236,7 +268,8 @@ export class KaitoProvider implements Provider {
     // Calculate replica status
     const desiredReplicas = resource.count || 1;
     const workerNodes = status.workerNodes || [];
-    const readyReplicas = phase === 'Running' ? Math.max(workerNodes.length, desiredReplicas) : 0;
+    // readyReplicas should be min of workerNodes and desired, or 0 if not running
+    const readyReplicas = phase === 'Running' ? Math.min(workerNodes.length || desiredReplicas, desiredReplicas) : 0;
 
     return {
       name: metadata.name || 'unknown',
@@ -398,11 +431,13 @@ export class KaitoProvider implements Provider {
         }
       }
 
-      // Check if operator is running in kaito-workspace namespace
+      // Check if operator is running in kaito-workspace namespace (operator namespace)
+      // Note: this.defaultNamespace is for deployments, operator runs in 'kaito-workspace'
+      const operatorNamespace = 'kaito-workspace';
       let operatorRunning = false;
       try {
         const pods = await coreV1Api.listNamespacedPod(
-          this.defaultNamespace,
+          operatorNamespace,
           undefined,
           undefined,
           undefined,
@@ -415,7 +450,7 @@ export class KaitoProvider implements Provider {
 
         // Also check alternative label patterns
         if (!operatorRunning) {
-          const allPods = await coreV1Api.listNamespacedPod(this.defaultNamespace);
+          const allPods = await coreV1Api.listNamespacedPod(operatorNamespace);
           operatorRunning = allPods.body.items.some(
             pod => pod.status?.phase === 'Running' &&
             (pod.metadata?.name?.includes('kaito') || pod.metadata?.name?.includes('workspace'))

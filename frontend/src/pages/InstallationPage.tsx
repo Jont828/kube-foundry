@@ -210,9 +210,11 @@ export function InstallationPage() {
                   </Badge>
                 </CardTitle>
                 <CardDescription>
-                  {runtime.id === 'dynamo'
-                    ? 'NVIDIA Dynamo for high-performance GPU inference with vLLM, SGLang, and TensorRT-LLM'
-                    : 'KubeRay for distributed Ray-based model serving with vLLM'}
+                  {runtime.id === 'kaito'
+                    ? 'Kubernetes AI Toolchain Operator for simplified model deployment'
+                    : runtime.id === 'dynamo'
+                      ? 'NVIDIA Dynamo for high-performance GPU inference with vLLM, SGLang, and TensorRT-LLM'
+                      : 'KubeRay for distributed Ray-based model serving with vLLM'}
                 </CardDescription>
               </CardHeader>
               <CardContent>

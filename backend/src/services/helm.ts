@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { mkdirSync, existsSync } from 'fs';
 import type { HelmRepo, HelmChart } from '../providers/types';
 import logger from '../lib/logger';
 
@@ -200,13 +201,51 @@ class HelmService {
   }
 
   /**
-   * Install a Helm chart
+   * Pull (download) a Helm chart tarball from a URL
+   */
+  async pull(
+    url: string,
+    destination: string,
+    onStream?: StreamCallback
+  ): Promise<HelmResult> {
+    // Ensure destination directory exists
+    if (!existsSync(destination)) {
+      mkdirSync(destination, { recursive: true });
+    }
+    const args = ['pull', url, '--destination', destination];
+    return this.execute(args, onStream);
+  }
+
+  /**
+   * Install a Helm chart (uses upgrade --install to handle existing releases)
+   * If chart has a fetchUrl, pulls the tarball first and installs from it
    */
   async install(
     chart: HelmChart,
     onStream?: StreamCallback
   ): Promise<HelmResult> {
-    const args = ['install', chart.name, chart.chart];
+    let chartPath = chart.chart;
+
+    // If fetchUrl is provided, pull the chart first
+    if (chart.fetchUrl) {
+      const tempDir = '/tmp/helm-charts';
+      // Ensure temp directory exists
+      if (!existsSync(tempDir)) {
+        mkdirSync(tempDir, { recursive: true });
+      }
+      
+      const pullResult = await this.execute(['pull', chart.fetchUrl, '--destination', tempDir], onStream);
+      if (!pullResult.success) {
+        return pullResult;
+      }
+      // Extract filename from URL
+      const urlParts = chart.fetchUrl.split('/');
+      const filename = urlParts[urlParts.length - 1];
+      chartPath = `${tempDir}/${filename}`;
+    }
+
+    // Use upgrade --install to handle both fresh installs and existing releases
+    const args = ['upgrade', chart.name, chartPath, '--install'];
     
     args.push('--namespace', chart.namespace);
     
@@ -338,15 +377,25 @@ class HelmService {
     }
 
     for (const chart of charts) {
-      let cmd = `helm install ${chart.name} ${chart.chart}`;
-      cmd += ` --namespace ${chart.namespace}`;
-      if (chart.createNamespace) {
-        cmd += ' --create-namespace';
+      if (chart.fetchUrl) {
+        // Use fetch + install for charts with fetchUrl
+        let cmd = `helm fetch ${chart.fetchUrl} && helm install ${chart.name} ${chart.chart}`;
+        cmd += ` --namespace ${chart.namespace}`;
+        if (chart.createNamespace) {
+          cmd += ' --create-namespace';
+        }
+        commands.push(cmd);
+      } else {
+        let cmd = `helm install ${chart.name} ${chart.chart}`;
+        cmd += ` --namespace ${chart.namespace}`;
+        if (chart.createNamespace) {
+          cmd += ' --create-namespace';
+        }
+        if (chart.version) {
+          cmd += ` --version ${chart.version}`;
+        }
+        commands.push(cmd);
       }
-      if (chart.version) {
-        cmd += ` --version ${chart.version}`;
-      }
-      commands.push(cmd);
     }
 
     return commands;

@@ -74,6 +74,7 @@ describe('KAITO Premade Model Deployment Flow', () => {
         provider: 'kaito',
         modelSource: 'premade',
         premadeModel: 'llama3.2:3b',
+        ggufRunMode: 'direct',
         computeType: 'cpu',
         replicas: 1,
       };
@@ -106,6 +107,7 @@ describe('KAITO Premade Model Deployment Flow', () => {
         provider: 'kaito',
         modelSource: 'premade',
         premadeModel: 'non-existent-model',
+        ggufRunMode: 'direct',
         computeType: 'cpu',
         replicas: 1,
       };
@@ -149,6 +151,7 @@ describe('KAITO Premade Model Deployment Flow', () => {
         provider: 'kaito',
         modelSource: 'premade',
         premadeModel: cpuModel.id,
+        ggufRunMode: 'direct',
         computeType: 'cpu',
         replicas: 1,
       };
@@ -205,6 +208,7 @@ describe('KAITO Premade Model Deployment Flow', () => {
         modelSource: 'huggingface',
         modelId: 'TheBloke/Llama-2-7B-Chat-GGUF',
         ggufFile: 'llama-2-7b-chat.Q4_K_M.gguf',
+        ggufRunMode: 'build',
         imageRef: 'kubefoundry-registry.kubefoundry-system.svc:5000/aikit-thebloke-llama-2-7b-chat-gguf:Q4_K_M',
         computeType: 'cpu',
         replicas: 2,
@@ -234,6 +238,7 @@ describe('KAITO Premade Model Deployment Flow', () => {
         provider: 'kaito',
         modelSource: 'premade',
         premadeModel: 'llama3.1:8b',
+        ggufRunMode: 'direct',
         computeType: 'gpu',
         replicas: 1,
         resources: {

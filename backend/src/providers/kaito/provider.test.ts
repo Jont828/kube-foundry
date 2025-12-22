@@ -17,7 +17,7 @@ describe('KaitoProvider', () => {
     });
 
     test('has default namespace', () => {
-      expect(provider.defaultNamespace).toBe('default');
+      expect(provider.defaultNamespace).toBe('kaito-workspace');
     });
   });
 

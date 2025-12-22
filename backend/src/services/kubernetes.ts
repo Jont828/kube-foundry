@@ -330,30 +330,45 @@ class KubernetesService {
   }
 
   async getDeploymentPods(name: string, namespace: string): Promise<PodStatus[]> {
-    try {
-      const response = await withRetry(
-        () => this.coreV1Api.listNamespacedPod(
-          namespace,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          `app.kubernetes.io/instance=${name}`
-        ),
-        { operationName: 'getDeploymentPods' }
-      );
+    // Try multiple label selectors since different providers use different labels
+    const labelSelectors = [
+      `app.kubernetes.io/instance=${name}`,  // Standard K8s label (Dynamo, KubeRay)
+      `kaito.sh/workspace=${name}`,          // KAITO workspace label
+      `app=${name}`,                         // Common fallback
+    ];
 
-      return response.body.items.map((pod): PodStatus => ({
-        name: pod.metadata?.name || 'unknown',
-        phase: (pod.status?.phase as PodPhase) || 'Unknown',
-        ready: pod.status?.containerStatuses?.every((cs) => cs.ready) || false,
-        restarts: pod.status?.containerStatuses?.reduce((sum, cs) => sum + cs.restartCount, 0) || 0,
-        node: pod.spec?.nodeName,
-      }));
-    } catch (error) {
-      logger.error({ error, name, namespace }, 'Error getting pods');
-      return [];
+    for (const labelSelector of labelSelectors) {
+      try {
+        const response = await withRetry(
+          () => this.coreV1Api.listNamespacedPod(
+            namespace,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            labelSelector
+          ),
+          { operationName: 'getDeploymentPods', maxRetries: 1 }
+        );
+
+        if (response.body.items.length > 0) {
+          logger.debug({ name, namespace, labelSelector, podCount: response.body.items.length }, 'Found pods with selector');
+          return response.body.items.map((pod): PodStatus => ({
+            name: pod.metadata?.name || 'unknown',
+            phase: (pod.status?.phase as PodPhase) || 'Unknown',
+            ready: pod.status?.containerStatuses?.every((cs) => cs.ready) || false,
+            restarts: pod.status?.containerStatuses?.reduce((sum, cs) => sum + cs.restartCount, 0) || 0,
+            node: pod.spec?.nodeName,
+          }));
+        }
+      } catch (error) {
+        logger.debug({ error, name, namespace, labelSelector }, 'Error trying label selector');
+        // Continue to next selector
+      }
     }
+
+    logger.debug({ name, namespace }, 'No pods found with any label selector');
+    return [];
   }
 
   /**
@@ -880,6 +895,91 @@ class KubernetesService {
     if (product.includes('3080')) return 10;
 
     return undefined;
+  }
+
+  /**
+   * Get list of cluster node names for deployment targeting
+   * Returns all nodes that are Ready and schedulable
+   */
+  async getClusterNodes(): Promise<{ name: string; ready: boolean; gpuCount: number }[]> {
+    try {
+      const nodesResponse = await withRetry(
+        () => this.coreV1Api.listNode(),
+        { operationName: 'getClusterNodes' }
+      );
+
+      return nodesResponse.body.items
+        .filter(node => {
+          // Filter out nodes that are unschedulable (cordoned)
+          return !node.spec?.unschedulable;
+        })
+        .map(node => {
+          const nodeName = node.metadata?.name || 'unknown';
+          
+          // Check if node is Ready
+          const readyCondition = node.status?.conditions?.find(c => c.type === 'Ready');
+          const isReady = readyCondition?.status === 'True';
+          
+          // Get GPU count if available
+          const gpuCapacity = node.status?.allocatable?.['nvidia.com/gpu'];
+          const gpuCount = gpuCapacity ? parseInt(gpuCapacity, 10) : 0;
+
+          return {
+            name: nodeName,
+            ready: isReady,
+            gpuCount,
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+      logger.error({ error }, 'Failed to get cluster nodes');
+      return [];
+    }
+  }
+
+  /**
+   * Get logs from a pod
+   */
+  async getPodLogs(
+    podName: string,
+    namespace: string,
+    options?: {
+      container?: string;
+      tailLines?: number;
+      timestamps?: boolean;
+    }
+  ): Promise<string> {
+    try {
+      const response = await withRetry(
+        () => this.coreV1Api.readNamespacedPodLog(
+          podName,
+          namespace,
+          options?.container,         // container
+          undefined,                  // follow (not supported in this API)
+          undefined,                  // insecureSkipTLSVerifyBackend
+          undefined,                  // limitBytes
+          undefined,                  // pretty
+          undefined,                  // previous
+          undefined,                  // sinceSeconds
+          options?.tailLines ?? 100,  // tailLines
+          options?.timestamps ?? false // timestamps
+        ),
+        { operationName: 'getPodLogs', maxRetries: 2 }
+      );
+
+      // Strip ANSI color codes from logs
+      const logs = response.body || '';
+      // eslint-disable-next-line no-control-regex
+      const ansiRegex = /\x1b\[[0-9;]*m/g;
+      return logs.replace(ansiRegex, '');
+    } catch (error: any) {
+      const statusCode = error?.statusCode || error?.response?.statusCode;
+      if (statusCode === 404) {
+        throw new Error(`Pod '${podName}' not found in namespace '${namespace}'`);
+      }
+      logger.error({ error, podName, namespace }, 'Error getting pod logs');
+      throw new Error(`Failed to get logs for pod '${podName}': ${error?.message || 'Unknown error'}`);
+    }
   }
 }
 

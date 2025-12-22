@@ -3,6 +3,12 @@ import { registryService } from './registry';
 import logger from '../lib/logger';
 
 /**
+ * Direct runner image for HuggingFace GGUF models
+ * Downloads and runs models at runtime without pre-building
+ */
+export const GGUF_RUNNER_IMAGE = 'docker.io/sozercan/runner:latest';
+
+/**
  * Pre-made AIKit models from the KAITO project
  * These are pre-built GGUF models that can be deployed directly
  */
@@ -349,23 +355,28 @@ class AikitService {
       // Determine image name and tag
       const imageName = request.imageName || `aikit-${this.sanitizeImageName(modelId)}`;
       const imageTag = request.imageTag || this.extractQuantization(ggufFile);
-      const imageRef = registryService.getImageRef(imageName, imageTag);
+      
+      // Use cluster-internal URL for buildx push
+      const buildImageRef = registryService.getImageRef(imageName, imageTag);
+      // Use kubelet-accessible URL for the returned imageRef (goes into KAITO manifest)
+      const kubeletImageRef = registryService.getKubeletImageRef(imageName, imageTag);
 
       logger.info(
-        { modelId, ggufFile, imageRef },
+        { modelId, ggufFile, buildImageRef, kubeletImageRef },
         'Building AIKit image from HuggingFace GGUF'
       );
 
       if (onStream) {
         onStream(`Building AIKit image for ${modelId}/${ggufFile}\n`, 'stdout');
-        onStream(`Target image: ${imageRef}\n`, 'stdout');
+        onStream(`Build target: ${buildImageRef}\n`, 'stdout');
+        onStream(`Kubelet image: ${kubeletImageRef}\n`, 'stdout');
       }
 
       // Execute the build
       const buildResult = await buildKitService.build(
         {
           buildArg: `model=${ggufUrl}`,
-          tags: [imageRef],
+          tags: [buildImageRef],
           context: AIKIT_DOCKERFILE_URL,
           push: true,
         },
@@ -385,11 +396,12 @@ class AikitService {
         };
       }
 
-      logger.info({ imageRef, buildTime }, 'AIKit image build completed successfully');
+      logger.info({ kubeletImageRef, buildTime }, 'AIKit image build completed successfully');
 
+      // Return the kubelet-accessible URL for use in KAITO manifests
       return {
         success: true,
-        imageRef,
+        imageRef: kubeletImageRef,
         buildTime,
         wasPremade: false,
       };
@@ -411,7 +423,7 @@ class AikitService {
 
   /**
    * Get the image reference for a request without building
-   * Useful for preview/validation
+   * Returns the kubelet-accessible URL for use in KAITO manifests
    */
   getImageRef(request: AikitBuildRequest): string | null {
     if (request.modelSource === 'premade') {
@@ -422,7 +434,8 @@ class AikitService {
     if (request.modelSource === 'huggingface' && request.modelId && request.ggufFile) {
       const imageName = request.imageName || `aikit-${this.sanitizeImageName(request.modelId)}`;
       const imageTag = request.imageTag || this.extractQuantization(request.ggufFile);
-      return registryService.getImageRef(imageName, imageTag);
+      // Return kubelet-accessible URL for use in KAITO manifests
+      return registryService.getKubeletImageRef(imageName, imageTag);
     }
 
     return null;

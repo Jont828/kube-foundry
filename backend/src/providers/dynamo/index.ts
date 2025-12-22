@@ -4,6 +4,64 @@ import type { Provider, CRDConfig, HelmRepo, HelmChart, InstallationStatus, Inst
 import { dynamoDeploymentConfigSchema, type DynamoDeploymentConfig } from './schema';
 import logger from '../../lib/logger';
 
+// Default fallback version if GitHub fetch fails
+const DEFAULT_DYNAMO_VERSION = '0.7.1';
+
+// GitHub API URL for Dynamo releases
+const GITHUB_RELEASES_URL = 'https://api.github.com/repos/ai-dynamo/dynamo/releases/latest';
+
+// Cache for the latest version
+let cachedVersion: string | null = null;
+let cacheTimestamp: number = 0;
+const CACHE_TTL_MS = 3600000; // 1 hour
+
+/**
+ * Fetch the latest Dynamo version from GitHub releases
+ */
+async function fetchLatestDynamoVersion(): Promise<string> {
+  // Check cache first
+  if (cachedVersion && (Date.now() - cacheTimestamp) < CACHE_TTL_MS) {
+    return cachedVersion;
+  }
+
+  try {
+    const response = await fetch(GITHUB_RELEASES_URL, {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'KubeFoundry',
+      },
+    });
+
+    if (!response.ok) {
+      logger.warn({ status: response.status }, 'Failed to fetch Dynamo version from GitHub');
+      return cachedVersion || process.env.DYNAMO_VERSION || DEFAULT_DYNAMO_VERSION;
+    }
+
+    const data = await response.json() as { tag_name?: string };
+    const tagName = data.tag_name;
+
+    if (tagName) {
+      // Remove 'v' prefix if present (e.g., 'v0.7.1' -> '0.7.1')
+      cachedVersion = tagName.startsWith('v') ? tagName.slice(1) : tagName;
+      cacheTimestamp = Date.now();
+      logger.info({ version: cachedVersion }, 'Fetched latest Dynamo version from GitHub');
+      return cachedVersion;
+    }
+
+    return cachedVersion || process.env.DYNAMO_VERSION || DEFAULT_DYNAMO_VERSION;
+  } catch (error) {
+    logger.warn({ error }, 'Error fetching Dynamo version from GitHub, using fallback');
+    return cachedVersion || process.env.DYNAMO_VERSION || DEFAULT_DYNAMO_VERSION;
+  }
+}
+
+/**
+ * Get the current Dynamo version (sync - uses cached value or fallback)
+ */
+function getDynamoVersion(): string {
+  return cachedVersion || process.env.DYNAMO_VERSION || DEFAULT_DYNAMO_VERSION;
+}
+
 /**
  * NVIDIA Dynamo Provider
  * Implements the Provider interface for NVIDIA's Dynamo inference platform
@@ -15,10 +73,18 @@ export class DynamoProvider implements Provider {
   defaultNamespace = 'dynamo-system';
 
   // CRD Constants
-  private static readonly API_GROUP = 'dynamo.nvidia.com';
+  private static readonly API_GROUP = 'nvidia.com';
   private static readonly API_VERSION = 'v1alpha1';
   private static readonly CRD_PLURAL = 'dynamographdeployments';
   private static readonly CRD_KIND = 'DynamoGraphDeployment';
+
+  /**
+   * Refresh the cached Dynamo version from GitHub releases
+   * Call this before installation to ensure we have the latest version
+   */
+  async refreshVersion(): Promise<string> {
+    return fetchLatestDynamoVersion();
+  }
 
   getCRDConfig(): CRDConfig {
     return {
@@ -412,44 +478,45 @@ export class DynamoProvider implements Provider {
   }
 
   getInstallationSteps(): InstallationStep[] {
+    const version = getDynamoVersion();
     return [
       {
-        title: 'Add NVIDIA Helm Repository',
-        command: 'helm repo add nvidia https://helm.ngc.nvidia.com/nvidia',
-        description: 'Add the NVIDIA NGC Helm repository to access Dynamo charts.',
+        title: 'Set Environment Variables',
+        command: `export NAMESPACE=dynamo-system\nexport RELEASE_VERSION=${version}`,
+        description: 'Set the namespace and release version for Dynamo installation.',
       },
       {
-        title: 'Update Helm Repositories',
-        command: 'helm repo update',
-        description: 'Update local Helm repository cache.',
+        title: 'Fetch and Install Dynamo CRDs',
+        command: `helm fetch https://helm.ngc.nvidia.com/nvidia/ai-dynamo/charts/dynamo-crds-${version}.tgz && helm install dynamo-crds dynamo-crds-${version}.tgz --namespace default`,
+        description: 'Install the Dynamo Custom Resource Definitions.',
       },
       {
-        title: 'Create Namespace',
-        command: 'kubectl create namespace dynamo-system',
-        description: 'Create the namespace for Dynamo components.',
-      },
-      {
-        title: 'Install Dynamo Operator',
-        command: 'helm install dynamo-operator nvidia/dynamo-operator -n dynamo-system',
-        description: 'Install the Dynamo operator which manages inference deployments.',
+        title: 'Fetch and Install Dynamo Platform',
+        command: `helm fetch https://helm.ngc.nvidia.com/nvidia/ai-dynamo/charts/dynamo-platform-${version}.tgz && helm install dynamo-platform dynamo-platform-${version}.tgz --namespace dynamo-system --create-namespace`,
+        description: 'Install the Dynamo platform which manages inference deployments.',
       },
     ];
   }
 
   getHelmRepos(): HelmRepo[] {
-    return [
-      {
-        name: 'nvidia',
-        url: 'https://helm.ngc.nvidia.com/nvidia',
-      },
-    ];
+    // No repos needed - we use direct fetch URLs
+    return [];
   }
 
   getHelmCharts(): HelmChart[] {
+    const version = getDynamoVersion();
     return [
       {
-        name: 'dynamo-operator',
-        chart: 'nvidia/dynamo-operator',
+        name: 'dynamo-crds',
+        chart: `dynamo-crds-${version}.tgz`,
+        fetchUrl: `https://helm.ngc.nvidia.com/nvidia/ai-dynamo/charts/dynamo-crds-${version}.tgz`,
+        namespace: 'default',
+        createNamespace: false,
+      },
+      {
+        name: 'dynamo-platform',
+        chart: `dynamo-platform-${version}.tgz`,
+        fetchUrl: `https://helm.ngc.nvidia.com/nvidia/ai-dynamo/charts/dynamo-platform-${version}.tgz`,
         namespace: 'dynamo-system',
         createNamespace: true,
       },

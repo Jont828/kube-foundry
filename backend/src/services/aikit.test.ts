@@ -239,7 +239,7 @@ describe('AikitService', () => {
       expect(imageRef).toBeNull();
     });
 
-    it('returns registry URL for HuggingFace model', () => {
+    it('returns kubelet-accessible registry URL for HuggingFace model', () => {
       const request: AikitBuildRequest = {
         modelSource: 'huggingface',
         modelId: 'TheBloke/Llama-2-7B-Chat-GGUF',
@@ -247,8 +247,9 @@ describe('AikitService', () => {
       };
 
       const imageRef = aikitService.getImageRef(request);
+      // Uses localhost:30500 NodePort for kubelet access
       expect(imageRef).toBe(
-        'kubefoundry-registry.kubefoundry-system.svc:5000/aikit-thebloke-llama-2-7b-chat-gguf:Q4_K_M'
+        'localhost:30500/aikit-thebloke-llama-2-7b-chat-gguf:Q4_K_M'
       );
     });
 
@@ -262,8 +263,9 @@ describe('AikitService', () => {
       };
 
       const imageRef = aikitService.getImageRef(request);
+      // Uses localhost:30500 NodePort for kubelet access
       expect(imageRef).toBe(
-        'kubefoundry-registry.kubefoundry-system.svc:5000/my-custom-image:v1.0'
+        'localhost:30500/my-custom-image:v1.0'
       );
     });
 

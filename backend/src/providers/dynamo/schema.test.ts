@@ -195,7 +195,7 @@ describe('dynamoDeploymentConfigSchema', () => {
 
 describe('dynamoManifestSchema', () => {
   const validManifest = {
-    apiVersion: 'dynamo.nvidia.com/v1alpha1',
+    apiVersion: 'nvidia.com/v1alpha1',
     kind: 'DynamoGraphDeployment',
     metadata: {
       name: 'my-deployment',

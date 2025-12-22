@@ -7,14 +7,16 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useConfetti } from '@/components/ui/confetti'
 import { useCreateDeployment, type DeploymentConfig } from '@/hooks/useDeployments'
-import { useHuggingFaceStatus } from '@/hooks/useHuggingFace'
+import { useHuggingFaceStatus, useGgufFiles } from '@/hooks/useHuggingFace'
 import { usePremadeModels } from '@/hooks/useAikit'
+import { useClusterNodes } from '@/hooks/useClusterStatus'
 import { useToast } from '@/hooks/useToast'
 import { generateDeploymentName, cn } from '@/lib/utils'
-import { type Model, type DetailedClusterCapacity, type AutoscalerDetectionResult, type RuntimeStatus, type PremadeModel } from '@/lib/api'
-import { ChevronDown, AlertCircle, Rocket, CheckCircle2, Sparkles, AlertTriangle, Server, Cpu, Box } from 'lucide-react'
+import { type Model, type DetailedClusterCapacity, type AutoscalerDetectionResult, type RuntimeStatus, type PremadeModel, aikitApi, type Engine } from '@/lib/api'
+import { ChevronDown, AlertCircle, Rocket, CheckCircle2, Sparkles, AlertTriangle, Server, Cpu, Box, Loader2 } from 'lucide-react'
 import { CapacityWarning } from './CapacityWarning'
 import { calculateGpuRecommendation } from '@/lib/gpu-recommendations'
 
@@ -25,11 +27,13 @@ interface DeploymentFormProps {
   runtimes?: RuntimeStatus[]
 }
 
-type Engine = 'vllm' | 'sglang' | 'trtllm'
+// Subset of Engine type for traditional GPU inference engines (excludes llamacpp which is KAITO-only)
+type TraditionalEngine = 'vllm' | 'sglang' | 'trtllm'
 type RouterMode = 'none' | 'kv' | 'round-robin'
 type DeploymentMode = 'aggregated' | 'disaggregated'
 type RuntimeId = 'dynamo' | 'kuberay' | 'kaito'
 type KaitoComputeType = 'cpu' | 'gpu'
+type GgufRunMode = 'build' | 'direct'
 
 // Runtime metadata for display
 const RUNTIME_INFO: Record<RuntimeId, { name: string; description: string; defaultNamespace: string }> = {
@@ -46,26 +50,26 @@ const RUNTIME_INFO: Record<RuntimeId, { name: string; description: string; defau
   kaito: {
     name: 'KAITO',
     description: 'CPU-capable inference with pre-built GGUF models via llama.cpp',
-    defaultNamespace: 'default',
+    defaultNamespace: 'kaito-workspace',
   },
 }
 
-// Engine support by runtime
-const RUNTIME_ENGINES: Record<RuntimeId, Engine[]> = {
+// Engine support by runtime (only traditional GPU engines, not llamacpp)
+const RUNTIME_ENGINES: Record<RuntimeId, TraditionalEngine[]> = {
   dynamo: ['vllm', 'sglang', 'trtllm'],
   kuberay: ['vllm'], // KubeRay only supports vLLM currently
   kaito: [], // KAITO uses llama.cpp, not traditional engines
 }
 
 // Check if a runtime is compatible with a model based on engine support
-function isRuntimeCompatible(runtimeId: RuntimeId, modelEngines: string[]): boolean {
+function isRuntimeCompatible(runtimeId: RuntimeId, modelEngines: Engine[]): boolean {
   // KAITO models (llamacpp engine) are only compatible with KAITO runtime
   if (modelEngines.includes('llamacpp')) {
     return runtimeId === 'kaito';
   }
   // Other models need at least one matching engine with the runtime
   const runtimeEngines = RUNTIME_ENGINES[runtimeId];
-  return modelEngines.some(e => runtimeEngines.includes(e as Engine));
+  return modelEngines.some(e => runtimeEngines.includes(e as TraditionalEngine));
 }
 
 export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }: DeploymentFormProps) {
@@ -73,7 +77,7 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
   const { toast } = useToast()
   const createDeployment = useCreateDeployment()
   const { data: hfStatus } = useHuggingFaceStatus()
-  const { data: premadeModels, isLoading: premadeModelsLoading } = usePremadeModels()
+  const { data: premadeModels } = usePremadeModels()
   const formRef = useRef<HTMLFormElement>(null)
   const { trigger: triggerConfetti, ConfettiComponent } = useConfetti(2500)
 
@@ -92,14 +96,14 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
     const compatibleRuntimes: RuntimeId[] = ['dynamo', 'kuberay', 'kaito'];
     for (const rtId of compatibleRuntimes) {
       const rt = runtimes.find(r => r.id === rtId);
-      if (rt?.installed && isRuntimeCompatible(rtId, model.supportedEngines as string[])) {
+      if (rt?.installed && isRuntimeCompatible(rtId, model.supportedEngines)) {
         return rtId;
       }
     }
     
     // If no compatible installed runtime, return first compatible one
     for (const rtId of compatibleRuntimes) {
-      if (isRuntimeCompatible(rtId, model.supportedEngines as string[])) {
+      if (isRuntimeCompatible(rtId, model.supportedEngines)) {
         return rtId;
       }
     }
@@ -114,12 +118,48 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
   // KAITO-specific state
   const [kaitoComputeType, setKaitoComputeType] = useState<KaitoComputeType>('cpu')
   const [selectedPremadeModel, setSelectedPremadeModel] = useState<PremadeModel | null>(null)
-  const [preferredNodes, setPreferredNodes] = useState<string>('')
+  const [preferredNodes, setPreferredNodes] = useState<string[]>([])
+  const [ggufFile, setGgufFile] = useState<string>('')
+  const [ggufRunMode, setGgufRunMode] = useState<GgufRunMode>('direct')
+  
+  // Fetch cluster nodes for KAITO preferred nodes selection
+  const { data: clusterNodesData, isLoading: clusterNodesLoading } = useClusterNodes(selectedRuntime === 'kaito');
+  const clusterNodes = clusterNodesData?.nodes || [];
+  
+  // Check if this is a HuggingFace GGUF model (not a premade model)
+  // GGUF models have only llamacpp as supported engine and come from HuggingFace
+  const isHuggingFaceGgufModel = model.supportedEngines.length === 1 && 
+                                  model.supportedEngines[0] === 'llamacpp' &&
+                                  !model.id.startsWith('kaito/');
+
+  // Fetch GGUF files from HuggingFace repo when it's a GGUF model and KAITO is selected
+  const { data: ggufFilesData, isLoading: ggufFilesLoading } = useGgufFiles(
+    model.id,
+    isHuggingFaceGgufModel && selectedRuntime === 'kaito'
+  );
+  const ggufFiles = ggufFilesData?.files || [];
+
+  // Auto-select Q4_K_M file if available, otherwise first file
+  useEffect(() => {
+    if (ggufFiles.length > 0 && !ggufFile) {
+      // Look for Q4_K_M variant (case-insensitive)
+      const q4kmFile = ggufFiles.find(f => /q4_k_m/i.test(f));
+      if (q4kmFile) {
+        setGgufFile(q4kmFile);
+      } else {
+        // Fallback to first file
+        setGgufFile(ggufFiles[0]);
+      }
+    }
+  }, [ggufFiles, ggufFile]);
 
   // Get supported engines for the selected runtime, filtered by model support
-  const getAvailableEngines = (): Engine[] => {
+  const getAvailableEngines = (): TraditionalEngine[] => {
     const runtimeEngines = RUNTIME_ENGINES[selectedRuntime]
-    return model.supportedEngines.filter(e => runtimeEngines.includes(e))
+    // Filter model engines to only those supported by the runtime (excluding llamacpp)
+    return model.supportedEngines.filter(
+      (e): e is TraditionalEngine => runtimeEngines.includes(e as TraditionalEngine)
+    )
   }
   const availableEngines = getAvailableEngines()
 
@@ -186,8 +226,10 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
   // Handle runtime change - update namespace and engine
   const handleRuntimeChange = (runtime: RuntimeId) => {
     setSelectedRuntime(runtime)
-    const newAvailableEngines = model.supportedEngines.filter(e => RUNTIME_ENGINES[runtime].includes(e))
-    const currentEngineSupported = newAvailableEngines.includes(config.engine)
+    const newAvailableEngines = model.supportedEngines.filter(
+      (e): e is TraditionalEngine => RUNTIME_ENGINES[runtime].includes(e as TraditionalEngine)
+    )
+    const currentEngineSupported = newAvailableEngines.includes(config.engine as TraditionalEngine)
     
     setConfig(prev => ({
       ...prev,
@@ -203,12 +245,12 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
     if (runtime !== 'kaito') {
       setSelectedPremadeModel(null)
       setKaitoComputeType('cpu')
-      setPreferredNodes('')
+      setPreferredNodes([])
     }
   }
 
-  // Handle premade model selection for KAITO
-  const handlePremadeModelSelect = (premadeModel: PremadeModel) => {
+  // Handle premade model selection for KAITO (also used in auto-selection useEffect above)
+  const handlePremadeModelSelect = useCallback((premadeModel: PremadeModel) => {
     setSelectedPremadeModel(premadeModel)
     setConfig(prev => ({
       ...prev,
@@ -216,7 +258,10 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
       modelId: premadeModel.id,
       servedModelName: premadeModel.modelName,
     }))
-  }
+  }, [])
+  
+  // Use the handler to ensure it's not considered unused
+  void handlePremadeModelSelect;
 
   // Keyboard shortcut: Cmd/Ctrl+Enter to submit
   useEffect(() => {
@@ -241,18 +286,80 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
       let deployConfig = { ...config }
       
       if (selectedRuntime === 'kaito') {
-        // Parse preferred nodes from comma-separated string
-        const nodesList = preferredNodes
-          .split(',')
-          .map(n => n.trim())
-          .filter(n => n.length > 0)
-        
-        deployConfig = {
-          ...deployConfig,
-          modelSource: 'premade',
-          computeType: kaitoComputeType,
-          premadeModel: selectedPremadeModel?.id,
-          ...(nodesList.length > 0 && { preferredNodes: nodesList }),
+        if (isHuggingFaceGgufModel) {
+          if (ggufRunMode === 'direct') {
+            // Direct run mode - no Docker/build required
+            // The runner image will download the model at runtime using huggingface:// URI
+            deployConfig = {
+              ...deployConfig,
+              modelSource: 'huggingface',
+              modelId: model.id,
+              ggufFile: ggufFile,
+              ggufRunMode: 'direct',
+              computeType: kaitoComputeType,
+              ...(preferredNodes.length > 0 && { preferredNodes }),
+            }
+          } else {
+            // Build mode - requires Docker and building an image
+            
+            // Check if build infrastructure (Docker) is available
+            toast({
+              title: 'Checking Build Infrastructure',
+              description: 'Verifying Docker and build tools are available...',
+            })
+            
+            const infraStatus = await aikitApi.getInfrastructureStatus()
+            if (!infraStatus.ready) {
+              const errorMsg = infraStatus.error || 
+                (!infraStatus.builder.running ? 'Docker is not running. Please start Docker and try again.' : 
+                 !infraStatus.registry.ready ? 'Container registry is not available.' : 
+                 'Build infrastructure is not ready.')
+              throw new Error(errorMsg)
+            }
+            
+            // Build the image first
+            toast({
+              title: 'Building Image',
+              description: `Building GGUF model image for ${model.id}. This may take a few minutes...`,
+            })
+            
+            const buildResult = await aikitApi.build({
+              modelSource: 'huggingface',
+              modelId: model.id,
+              ggufFile: ggufFile,
+            })
+            
+            if (!buildResult.success || !buildResult.imageRef) {
+              throw new Error(buildResult.error || 'Failed to build model image')
+            }
+            
+            toast({
+              title: 'Image Built Successfully',
+              description: `Image: ${buildResult.imageRef}`,
+              variant: 'success',
+            })
+            
+            // Use the built image in the deployment config
+            deployConfig = {
+              ...deployConfig,
+              modelSource: 'huggingface',
+              modelId: model.id,
+              ggufFile: ggufFile,
+              ggufRunMode: 'build',
+              imageRef: buildResult.imageRef,
+              computeType: kaitoComputeType,
+              ...(preferredNodes.length > 0 && { preferredNodes }),
+            }
+          }
+        } else {
+          // Premade model
+          deployConfig = {
+            ...deployConfig,
+            modelSource: 'premade',
+            computeType: kaitoComputeType,
+            premadeModel: selectedPremadeModel?.id,
+            ...(preferredNodes.length > 0 && { preferredNodes }),
+          }
         }
       }
 
@@ -278,7 +385,7 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
         variant: 'destructive',
       })
     }
-  }, [config, createDeployment, navigate, toast, triggerConfetti, selectedRuntime, kaitoComputeType, selectedPremadeModel])
+  }, [config, createDeployment, navigate, toast, triggerConfetti, selectedRuntime, kaitoComputeType, selectedPremadeModel, isHuggingFaceGgufModel, model.id, ggufFile, ggufRunMode, preferredNodes])
 
   const updateConfig = <K extends keyof DeploymentConfig>(
     key: K,
@@ -309,7 +416,12 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
     : (config.resources?.gpu || gpuRecommendation.recommendedGpus || 1);
 
   // Check if KAITO configuration is valid
-  const isKaitoConfigValid = selectedRuntime !== 'kaito' || selectedPremadeModel !== null
+  // For HuggingFace GGUF models, we need a ggufFile for both direct and build modes
+  // For premade, we need a selected model
+  const isKaitoConfigValid = selectedRuntime !== 'kaito' || 
+    (isHuggingFaceGgufModel 
+      ? ggufFile.endsWith('.gguf')
+      : selectedPremadeModel !== null)
 
   // Status-aware button content
   const getButtonContent = () => {
@@ -321,8 +433,12 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
       return 'Runtime Not Installed'
     }
 
-    if (selectedRuntime === 'kaito' && !selectedPremadeModel) {
+    if (selectedRuntime === 'kaito' && !isHuggingFaceGgufModel && !selectedPremadeModel) {
       return 'Select a Model'
+    }
+
+    if (selectedRuntime === 'kaito' && isHuggingFaceGgufModel && !ggufFile.endsWith('.gguf')) {
+      return 'Select GGUF File'
     }
 
     switch (createDeployment.status) {
@@ -398,7 +514,7 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
                 const info = RUNTIME_INFO[runtime.id as RuntimeId]
                 if (!info) return null
                 
-                const isCompatible = isRuntimeCompatible(runtime.id as RuntimeId, model.supportedEngines as string[])
+                const isCompatible = isRuntimeCompatible(runtime.id as RuntimeId, model.supportedEngines)
                 
                 return (
                   <div
@@ -582,21 +698,155 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
               </p>
             </div>
 
-            {/* Preferred Nodes Input */}
+            {/* Run Mode Selection - only for HuggingFace GGUF models */}
+            {isHuggingFaceGgufModel && (
+              <div className="space-y-3">
+                <Label>Run Mode</Label>
+                <RadioGroup
+                  value={ggufRunMode}
+                  onValueChange={(value) => setGgufRunMode(value as GgufRunMode)}
+                  className="grid gap-3"
+                >
+                  <label
+                    htmlFor="run-direct"
+                    className={cn(
+                      "flex items-start space-x-3 rounded-lg border p-3 cursor-pointer transition-colors",
+                      ggufRunMode === 'direct'
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-muted-foreground/50"
+                    )}
+                  >
+                    <RadioGroupItem value="direct" id="run-direct" className="mt-1" />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">Direct Run</span>
+                        <Badge variant="secondary" className="text-xs">Recommended</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Downloads model at runtime. No Docker required.
+                      </p>
+                    </div>
+                  </label>
+                  <label
+                    htmlFor="run-build"
+                    className={cn(
+                      "flex items-start space-x-3 rounded-lg border p-3 cursor-pointer transition-colors",
+                      ggufRunMode === 'build'
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-muted-foreground/50"
+                    )}
+                  >
+                    <RadioGroupItem value="build" id="run-build" className="mt-1" />
+                    <div className="flex-1">
+                      <span className="font-medium">Build Image</span>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Pre-builds container image. Requires Docker running locally.
+                      </p>
+                    </div>
+                  </label>
+                </RadioGroup>
+              </div>
+            )}
+
+            {/* Preferred Nodes Selection */}
             <div className="space-y-3">
-              <Label htmlFor="preferredNodes">Preferred Nodes (Optional)</Label>
-              <Input
-                id="preferredNodes"
-                type="text"
-                placeholder="e.g., node-1, node-2"
-                value={preferredNodes}
-                onChange={(e) => setPreferredNodes(e.target.value)}
-              />
+              <Label>Preferred Nodes (Optional)</Label>
+              {clusterNodesLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading cluster nodes...
+                </div>
+              ) : clusterNodes.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    {clusterNodes.map((node) => {
+                      const isSelected = preferredNodes.includes(node.name)
+                      return (
+                        <button
+                          key={node.name}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              setPreferredNodes(preferredNodes.filter(n => n !== node.name))
+                            } else {
+                              setPreferredNodes([...preferredNodes, node.name])
+                            }
+                          }}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm border transition-colors",
+                            isSelected
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-background hover:bg-accent border-input"
+                          )}
+                        >
+                          <span>{node.name}</span>
+                          {node.gpuCount > 0 && (
+                            <Badge variant="secondary" className="text-xs px-1 py-0">
+                              {node.gpuCount} GPU{node.gpuCount > 1 ? 's' : ''}
+                            </Badge>
+                          )}
+                          {!node.ready && (
+                            <Badge variant="destructive" className="text-xs px-1 py-0">
+                              Not Ready
+                            </Badge>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {preferredNodes.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPreferredNodes([])}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Clear selection
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground py-2">
+                  No schedulable nodes found in the cluster.
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
-                Specify existing Kubernetes node names to use for deployment (comma-separated).
-                If empty, KAITO will schedule on any available node matching the label selector.
+                Select nodes to prefer for this deployment.
+                If none selected, KAITO will schedule on any available node matching the label selector.
               </p>
             </div>
+
+            {/* GGUF File Selection - for HuggingFace GGUF models */}
+            {isHuggingFaceGgufModel && (
+              <div className="space-y-3">
+                <Label htmlFor="ggufFile">GGUF File</Label>
+                {ggufFilesLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading GGUF files from repository...
+                  </div>
+                ) : ggufFiles.length > 0 ? (
+                  <Select value={ggufFile} onValueChange={setGgufFile}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a GGUF file" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ggufFiles.map((file) => (
+                        <SelectItem key={file} value={file}>
+                          {file}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="text-sm text-muted-foreground py-2">
+                    No GGUF files found in this repository.
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Select the quantization variant to use. Q4_K_M offers a good balance of quality and size.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

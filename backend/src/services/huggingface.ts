@@ -213,6 +213,40 @@ class HuggingFaceService {
       query,
     };
   }
+
+  /**
+   * Get GGUF files from a HuggingFace repository
+   * @param modelId - The model ID (e.g., 'unsloth/Qwen3-4B-GGUF')
+   * @param accessToken - Optional access token for gated models
+   */
+  async getGgufFiles(modelId: string, accessToken?: string): Promise<string[]> {
+    logger.debug({ modelId }, 'Fetching GGUF files from HuggingFace repo');
+
+    const url = `https://huggingface.co/api/models/${modelId}`;
+    const headers: Record<string, string> = {};
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+
+    const response = await fetch(url, { headers });
+
+    if (!response.ok) {
+      logger.error({ status: response.status, modelId }, 'Failed to fetch model info');
+      throw new Error(`Failed to fetch model info: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Extract GGUF files from siblings array
+    const siblings = data.siblings || [];
+    const ggufFiles = siblings
+      .filter((file: { rfilename: string }) => file.rfilename.endsWith('.gguf'))
+      .map((file: { rfilename: string }) => file.rfilename)
+      .sort();
+
+    logger.debug({ modelId, count: ggufFiles.length }, 'Found GGUF files');
+    return ggufFiles;
+  }
 }
 
 // Export singleton instance

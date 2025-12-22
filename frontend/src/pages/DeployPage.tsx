@@ -20,12 +20,14 @@ export function DeployPage() {
   const localModelQuery = useModel(isHfSource ? undefined : decodedModelId)
   const hfModelQuery = useHfModel(isHfSource ? decodedModelId : undefined)
 
-  const { data: model, isLoading, error } = isHfSource ? hfModelQuery : localModelQuery
+  const { data: model, isLoading: modelLoading, error } = isHfSource ? hfModelQuery : localModelQuery
   const { data: detailedCapacity } = useDetailedCapacity()
   const { data: autoscaler } = useAutoscalerDetection()
-  const { data: runtimesData } = useRuntimesStatus()
+  const { data: runtimesData, isLoading: runtimesLoading } = useRuntimesStatus()
 
-  if (isLoading) {
+  // Wait for both model and runtimes to load before showing the form
+  // This ensures the runtime selector is visible when the form renders
+  if (modelLoading || runtimesLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

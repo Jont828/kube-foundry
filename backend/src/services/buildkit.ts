@@ -403,9 +403,10 @@ class BuildKitService {
       args.push('-t', tag);
     }
 
-    // Add push flag
+    // Add push flag with insecure registry support for local HTTP registry
     if (options.push) {
-      args.push('--push');
+      // Use --output with registry.insecure=true to allow pushing to HTTP registries
+      args.push('--output', `type=image,push=true,registry.insecure=true`);
     }
 
     // Add context (URL or path)

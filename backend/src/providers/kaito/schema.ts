@@ -22,6 +22,11 @@ export const kaitoDeploymentConfigSchema = z.object({
   modelId: z.string().optional(),    // HF repo: 'TheBloke/Llama-2-7B-Chat-GGUF'
   ggufFile: z.string().optional(),   // File: 'llama-2-7b-chat.Q4_K_M.gguf'
 
+  // GGUF run mode for HuggingFace models
+  // 'direct' - Use runner image, download model at runtime (no Docker required)
+  // 'build' - Build custom image with model embedded (requires Docker)
+  ggufRunMode: z.enum(['build', 'direct']).default('direct'),
+
   // Compute type - KAITO's key differentiator is CPU inference
   computeType: z.enum(['cpu', 'gpu']).default('cpu'),
 
@@ -50,6 +55,7 @@ export const kaitoDeploymentConfigSchema = z.object({
       return !!data.premadeModel;
     }
     if (data.modelSource === 'huggingface') {
+      // Both direct and build modes require modelId and ggufFile
       return !!data.modelId && !!data.ggufFile;
     }
     return false;

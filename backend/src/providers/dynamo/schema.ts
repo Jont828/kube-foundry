@@ -19,7 +19,7 @@ export type DynamoDeploymentConfig = z.infer<typeof dynamoDeploymentConfigSchema
  * Dynamo manifest schema for validation
  */
 export const dynamoManifestSchema = z.object({
-  apiVersion: z.literal('dynamo.nvidia.com/v1alpha1'),
+  apiVersion: z.literal('nvidia.com/v1alpha1'),
   kind: z.literal('DynamoGraphDeployment'),
   metadata: z.object({
     name: z.string(),

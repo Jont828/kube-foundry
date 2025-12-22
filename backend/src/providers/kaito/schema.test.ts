@@ -180,8 +180,19 @@ describe('kaitoDeploymentConfigSchema', () => {
 
     it('rejects huggingface without ggufFile', () => {
       const { ggufFile, ...configWithoutGgufFile } = validHuggingFaceConfig;
+      // Both direct and build modes require ggufFile
       const result = kaitoDeploymentConfigSchema.safeParse(configWithoutGgufFile);
       expect(result.success).toBe(false);
+    });
+
+    it('accepts huggingface with ggufFile in direct mode', () => {
+      const result = kaitoDeploymentConfigSchema.safeParse({ ...validHuggingFaceConfig, ggufRunMode: 'direct' });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts huggingface with ggufFile in build mode', () => {
+      const result = kaitoDeploymentConfigSchema.safeParse({ ...validHuggingFaceConfig, ggufRunMode: 'build' });
+      expect(result.success).toBe(true);
     });
 
     it('rejects invalid modelSource', () => {
