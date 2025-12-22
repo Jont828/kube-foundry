@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { HTTPException } from 'hono/http-exception';
 import { kubernetesService } from '../services/kubernetes';
+import { configService } from '../services/config';
 import { providerRegistry } from '../providers';
 import { metricsService } from '../services/metrics';
 import { validateGpuFit, formatGpuWarnings } from '../services/gpuValidation';
@@ -262,6 +263,74 @@ const deployments = new Hono()
           {
             error: {
               message: error instanceof Error ? error.message : 'Failed to get pending reasons',
+              statusCode: 500,
+            },
+          },
+          500
+        );
+      }
+    }
+  )
+  .get(
+    '/:name/logs',
+    zValidator('param', deploymentParamsSchema),
+    zValidator('query', z.object({
+      namespace: namespaceSchema.optional(),
+      podName: z.string().optional(),
+      container: z.string().optional(),
+      tailLines: z.string().optional()
+        .transform((val) => (val ? parseInt(val, 10) : undefined))
+        .pipe(z.number().int().min(1).max(10000).optional()),
+      timestamps: z.string().optional()
+        .transform((val) => val === 'true'),
+    })),
+    async (c) => {
+      const { name } = c.req.valid('param');
+      const { namespace, podName, container, tailLines, timestamps } = c.req.valid('query');
+      const resolvedNamespace = namespace || (await configService.getDefaultNamespace());
+
+      try {
+        // Get pods for this deployment using label selectors (works for all providers)
+        const pods = await kubernetesService.getDeploymentPods(name, resolvedNamespace);
+
+        if (pods.length === 0) {
+          logger.debug({ name, namespace: resolvedNamespace }, 'No pods found for deployment');
+          return c.json({ logs: '', podName: '', message: 'No pods found for this deployment' });
+        }
+
+        // Use specified pod or default to first pod
+        const targetPodName = podName || pods[0].name;
+        
+        // Verify the pod belongs to this deployment
+        const podExists = pods.some(pod => pod.name === targetPodName);
+        if (!podExists) {
+          throw new HTTPException(400, { 
+            message: `Pod '${targetPodName}' is not part of deployment '${name}'` 
+          });
+        }
+
+        logger.debug({ name, namespace: resolvedNamespace, targetPodName }, 'Fetching logs for pod');
+
+        const logs = await kubernetesService.getPodLogs(targetPodName, resolvedNamespace, {
+          container,
+          tailLines: tailLines || 100,
+          timestamps: timestamps || false,
+        });
+
+        return c.json({ 
+          logs, 
+          podName: targetPodName,
+          container: container || undefined,
+        });
+      } catch (error) {
+        if (error instanceof HTTPException) {
+          throw error;
+        }
+        logger.error({ error, name, namespace: resolvedNamespace }, 'Error getting deployment logs');
+        return c.json(
+          {
+            error: {
+              message: error instanceof Error ? error.message : 'Failed to get logs',
               statusCode: 500,
             },
           },

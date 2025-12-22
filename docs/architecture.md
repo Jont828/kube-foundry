@@ -87,10 +87,42 @@ interface Provider {
 
 ### Supported Providers
 
-| Provider | CRD | Status |
-|----------|-----|--------|
-| NVIDIA Dynamo | DynamoGraphDeployment | ✅ Available |
-| KubeRay | RayService | ✅ Available |
+| Provider | CRD | Status | Description |
+|----------|-----|--------|-------------|
+| NVIDIA Dynamo | DynamoGraphDeployment | ✅ Available | High-performance GPU inference with KV-cache routing |
+| KubeRay | RayService | ✅ Available | Ray-based serving with autoscaling |
+| KAITO | Pod/Deployment | ✅ Available | CPU-capable inference with pre-built GGUF models |
+
+### KAITO Provider
+
+The KAITO provider enables CPU-capable inference using quantized GGUF models via llama.cpp. It supports:
+
+- **Pre-made Models**: Ready-to-deploy GGUF models from `ghcr.io/kaito-project/aikit/*`
+- **HuggingFace GGUF**: Build custom images from any HuggingFace GGUF model
+- **CPU/GPU Flexibility**: Run inference on CPU nodes (no GPU required) or GPU nodes
+
+#### Build Infrastructure
+
+For HuggingFace GGUF models, KAITO uses in-cluster image building:
+
+```
+┌────────────────┐     ┌──────────────┐     ┌─────────────────┐
+│  HuggingFace   │────▶│  BuildKit    │────▶│  In-Cluster     │
+│  GGUF Model    │     │  (K8s Driver)│     │  Registry       │
+└────────────────┘     └──────────────┘     └─────────────────┘
+                                                    │
+                                                    ▼
+                                            ┌─────────────────┐
+                                            │  KAITO Pod      │
+                                            │  (llama.cpp)    │
+                                            └─────────────────┘
+```
+
+#### Related Services
+
+- **RegistryService** (`backend/src/services/registry.ts`): Manages in-cluster registry
+- **BuildKitService** (`backend/src/services/buildkit.ts`): Manages BuildKit builder
+- **AikitService** (`backend/src/services/aikit.ts`): Handles GGUF image building
 
 ## Data Models
 

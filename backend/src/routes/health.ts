@@ -39,6 +39,15 @@ const health = new Hono()
         : null,
       providerInstallation,
     });
+  })
+  .get('/nodes', async (c) => {
+    try {
+      const nodes = await kubernetesService.getClusterNodes();
+      return c.json({ nodes });
+    } catch (error) {
+      logger.error({ error }, 'Error getting cluster nodes');
+      return c.json({ nodes: [] });
+    }
   });
 
 export default health;

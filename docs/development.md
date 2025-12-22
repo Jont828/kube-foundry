@@ -174,10 +174,16 @@ kubectl create secret generic hf-token-secret \
 
 ### Install NVIDIA Dynamo (via Helm)
 ```bash
-helm repo add nvidia-dynamo https://nvidia.github.io/dynamo
-helm repo update
-helm install dynamo-operator nvidia-dynamo/dynamo \
-  --namespace kubefoundry-system --create-namespace
+export NAMESPACE=dynamo-system
+export RELEASE_VERSION=0.7.1
+
+# Install CRDs
+helm fetch https://helm.ngc.nvidia.com/nvidia/ai-dynamo/charts/dynamo-crds-${RELEASE_VERSION}.tgz
+helm install dynamo-crds dynamo-crds-${RELEASE_VERSION}.tgz --namespace default
+
+# Install Platform
+helm fetch https://helm.ngc.nvidia.com/nvidia/ai-dynamo/charts/dynamo-platform-${RELEASE_VERSION}.tgz
+helm install dynamo-platform dynamo-platform-${RELEASE_VERSION}.tgz --namespace ${NAMESPACE} --create-namespace
 ```
 
 ## Adding a New Provider
@@ -289,7 +295,7 @@ curl http://localhost:8000/v1/chat/completions \
 - Ensure proper RBAC permissions
 
 ### Provider not detected as installed
-- Check CRD exists: `kubectl get crd dynamographdeployments.dynamo.nvidia.com`
+- Check CRD exists: `kubectl get crd dynamographdeployments.nvidia.com`
 - Check operator deployment: `kubectl get deployments -n kubefoundry`
 
 ### Frontend can't reach backend

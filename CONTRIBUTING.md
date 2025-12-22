@@ -253,7 +253,7 @@ curl -X POST http://localhost:3001/api/deployments \
 - Ensure proper RBAC permissions
 
 ### Provider not detected as installed
-- Check CRD exists: `kubectl get crd dynamographdeployments.dynamo.nvidia.com`
+- Check CRD exists: `kubectl get crd dynamographdeployments.nvidia.com`
 - Check operator deployment: `kubectl get deployments -n kubefoundry`
 
 ### Frontend can't reach backend

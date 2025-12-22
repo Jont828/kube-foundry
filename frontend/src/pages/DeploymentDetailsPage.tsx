@@ -1,5 +1,5 @@
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
-import { useDeployment, useDeploymentPods, useDeleteDeployment } from '@/hooks/useDeployments'
+import { useDeployment, useDeleteDeployment } from '@/hooks/useDeployments'
 import { useToast } from '@/hooks/useToast'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { useAutoscalerDetection, usePendingReasons } from '@/hooks/useAutoscaler'
 import { PendingExplanation } from '@/components/deployments/PendingExplanation'
+import { DeploymentLogs } from '@/components/deployments/DeploymentLogs'
 
 export function DeploymentDetailsPage() {
   const { name } = useParams<{ name: string }>()
@@ -30,7 +31,6 @@ export function DeploymentDetailsPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   const { data: deployment, isLoading, error } = useDeployment(name, namespace)
-  const { data: pods } = useDeploymentPods(name, namespace)
 
   // Autoscaler detection and pending reasons (only fetch when deployment is Pending)
   const { data: autoscaler } = useAutoscalerDetection()
@@ -65,7 +65,8 @@ export function DeploymentDetailsPage() {
 
   const copyPortForwardCommand = () => {
     if (!deployment) return
-    const command = `kubectl port-forward svc/${deployment.frontendService || deployment.name + '-frontend'} 8000:8000 -n ${deployment.namespace}`
+    const servicePort = deployment.provider === 'kaito' ? '80' : '8000'
+    const command = `kubectl port-forward svc/${deployment.frontendService || deployment.name + '-frontend'} 8000:${servicePort} -n ${deployment.namespace}`
     navigator.clipboard.writeText(command)
     toast({
       title: 'Copied to clipboard',
@@ -97,7 +98,8 @@ export function DeploymentDetailsPage() {
     )
   }
 
-  const portForwardCommand = `kubectl port-forward svc/${deployment.frontendService || deployment.name + '-frontend'} 8000:8000 -n ${deployment.namespace}`
+  const servicePort = deployment.provider === 'kaito' ? '80' : '8000'
+  const portForwardCommand = `kubectl port-forward svc/${deployment.frontendService || deployment.name + '-frontend'} 8000:${servicePort} -n ${deployment.namespace}`
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -135,9 +137,15 @@ export function DeploymentDetailsPage() {
               <p className="text-sm text-muted-foreground mb-1">Runtime</p>
               <Badge 
                 variant="secondary" 
-                className={deployment.provider === 'kuberay' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300'}
+                className={
+                  deployment.provider === 'kuberay' 
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' 
+                    : deployment.provider === 'kaito'
+                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
+                    : 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300'
+                }
               >
-                {deployment.provider === 'kuberay' ? 'KubeRay' : 'Dynamo'}
+                {deployment.provider === 'kuberay' ? 'KubeRay' : deployment.provider === 'kaito' ? 'KAITO' : 'Dynamo'}
               </Badge>
             </div>
             <div>
@@ -223,44 +231,11 @@ export function DeploymentDetailsPage() {
         provider={deployment.provider}
       />
 
-      {/* Pods */}
-      {pods && pods.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Pods</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-lg border">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-2 text-left text-sm font-medium">Name</th>
-                    <th className="px-4 py-2 text-left text-sm font-medium">Status</th>
-                    <th className="px-4 py-2 text-left text-sm font-medium">Ready</th>
-                    <th className="px-4 py-2 text-left text-sm font-medium">Restarts</th>
-                    <th className="px-4 py-2 text-left text-sm font-medium">Node</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pods.map((pod) => (
-                    <tr key={pod.name} className="border-b last:border-0">
-                      <td className="px-4 py-2 text-sm font-mono">{pod.name}</td>
-                      <td className="px-4 py-2">
-                        <Badge variant={pod.phase === 'Running' ? 'success' : 'warning'}>
-                          {pod.phase}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2 text-sm">{pod.ready ? '✓' : '✗'}</td>
-                      <td className="px-4 py-2 text-sm">{pod.restarts}</td>
-                      <td className="px-4 py-2 text-sm text-muted-foreground">{pod.node || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Logs */}
+      <DeploymentLogs
+        deploymentName={deployment.name}
+        namespace={deployment.namespace}
+      />
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

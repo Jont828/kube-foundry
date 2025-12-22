@@ -29,6 +29,8 @@ export interface HelmChart {
   namespace: string;
   values?: Record<string, unknown>;
   createNamespace?: boolean;
+  /** Optional: Direct URL to fetch the chart tarball (for charts not in repos) */
+  fetchUrl?: string;
 }
 
 /**
@@ -127,6 +129,12 @@ export interface Provider {
    * These define which Prometheus metrics to extract and how to display them.
    */
   getKeyMetrics(): MetricDefinition[];
+
+  /**
+   * Optional: Refresh version information from external source (e.g., GitHub releases)
+   * Should be called before installation to ensure latest version is used
+   */
+  refreshVersion?(): Promise<string>;
 }
 
 /**
@@ -150,7 +158,7 @@ export const baseDeploymentConfigSchema = z.object({
   modelId: z.string().min(1),
   engine: z.enum(['vllm', 'sglang', 'trtllm']),
   mode: z.enum(['aggregated', 'disaggregated']).default('aggregated'),
-  provider: z.enum(['dynamo', 'kuberay']).optional(),
+  provider: z.enum(['dynamo', 'kuberay', 'kaito']).optional(),
   servedModelName: z.string().optional(),
   routerMode: z.enum(['none', 'kv', 'round-robin']).default('none'),
   replicas: z.number().int().min(1).max(10).default(1),

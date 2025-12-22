@@ -55,7 +55,7 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
   # NVIDIA Dynamo CRDs
-  - apiGroups: ["dynamo.nvidia.com"]
+  - apiGroups: ["nvidia.com"]
     resources:
       - dynamographdeployments
       - dynamographdeployments/status

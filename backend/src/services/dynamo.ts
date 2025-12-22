@@ -35,7 +35,7 @@ export function generateDynamoManifest(config: DeploymentConfig): DynamoManifest
   const frontendSpec = generateFrontendSpec(config);
 
   const manifest: DynamoManifest = {
-    apiVersion: 'dynamo.nvidia.com/v1alpha1',
+    apiVersion: 'nvidia.com/v1alpha1',
     kind: 'DynamoGraphDeployment',
     metadata: {
       name: config.name,
@@ -133,7 +133,7 @@ function generateWorkerSpec(config: DeploymentConfig): Record<string, unknown> {
 export function validateManifest(manifest: DynamoManifest): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
-  if (!manifest.apiVersion || manifest.apiVersion !== 'dynamo.nvidia.com/v1alpha1') {
+  if (!manifest.apiVersion || manifest.apiVersion !== 'nvidia.com/v1alpha1') {
     errors.push('Invalid or missing apiVersion');
   }
 

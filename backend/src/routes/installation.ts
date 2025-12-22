@@ -90,6 +90,11 @@ const installation = new Hono()
       const installationStatus = await kubernetesService.checkProviderInstallation(id);
       const provider = providerRegistry.getProvider(id);
 
+      // Refresh version from GitHub if provider supports it
+      if (provider.refreshVersion) {
+        await provider.refreshVersion();
+      }
+
       return c.json({
         providerId: id,
         providerName: provider.name,
@@ -113,6 +118,12 @@ const installation = new Hono()
       }
 
       const provider = providerRegistry.getProvider(id);
+
+      // Refresh version from GitHub if provider supports it
+      if (provider.refreshVersion) {
+        await provider.refreshVersion();
+      }
+
       const commands = helmService.getInstallCommands(
         provider.getHelmRepos(),
         provider.getHelmCharts()
@@ -154,6 +165,11 @@ const installation = new Hono()
         });
       }
 
+      // Refresh version from GitHub if provider supports it
+      if (provider.refreshVersion) {
+        await provider.refreshVersion();
+      }
+
       logger.info(
         { providerId: id, providerName: provider.name },
         `Starting installation of ${provider.name}`
@@ -182,8 +198,13 @@ const installation = new Hono()
         });
       } else {
         const failedStep = result.results.find((r) => !r.result.success);
+        // Sanitize stderr to prevent JSON serialization issues
+        const stderr = (failedStep?.result.stderr || 'Unknown error')
+          .replace(/[\x00-\x1F\x7F]/g, ' ')  // Replace control characters
+          .trim()
+          .slice(0, 500);  // Limit length
         throw new HTTPException(500, {
-          message: `Installation failed at step "${failedStep?.step}": ${failedStep?.result.stderr}`,
+          message: `Installation failed at step "${failedStep?.step}": ${stderr}`,
         });
       }
     }

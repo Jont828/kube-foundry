@@ -36,7 +36,7 @@ export function InstallationPage() {
   const { toast } = useToast()
 
   const [selectedRuntime, setSelectedRuntime] = useState<RuntimeId | null>(null)
-  
+
   // Set default runtime once data is loaded: prefer installed runtime
   useEffect(() => {
     if (runtimesStatus?.runtimes && selectedRuntime === null) {
@@ -59,9 +59,9 @@ export function InstallationPage() {
   const installProvider = useInstallProvider()
 
   const [isInstalling, setIsInstalling] = useState(false)
-  
+
   const runtimes = runtimesStatus?.runtimes || []
-  
+
   // Don't render runtime-specific content until we have a selection
   const effectiveRuntime = selectedRuntime || 'dynamo'
 
@@ -192,12 +192,12 @@ export function InstallationPage() {
         <h2 className="text-xl font-semibold mb-4">Available Runtimes</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {runtimes.map((runtime) => (
-            <Card 
+            <Card
               key={runtime.id}
               className={cn(
                 'transition-all cursor-pointer',
-                effectiveRuntime === runtime.id 
-                  ? 'ring-2 ring-primary' 
+                effectiveRuntime === runtime.id
+                  ? 'ring-2 ring-primary'
                   : 'hover:border-primary/50'
               )}
               onClick={() => setSelectedRuntime(runtime.id as RuntimeId)}
@@ -210,9 +210,11 @@ export function InstallationPage() {
                   </Badge>
                 </CardTitle>
                 <CardDescription>
-                  {runtime.id === 'dynamo' 
-                    ? 'NVIDIA Dynamo for high-performance GPU inference with vLLM, SGLang, and TensorRT-LLM' 
-                    : 'KubeRay for distributed Ray-based model serving with vLLM'}
+                  {runtime.id === 'kaito'
+                    ? 'Kubernetes AI Toolchain Operator for simplified model deployment'
+                    : runtime.id === 'dynamo'
+                      ? 'NVIDIA Dynamo for high-performance GPU inference with vLLM, SGLang, and TensorRT-LLM'
+                      : 'KubeRay for distributed Ray-based model serving with vLLM'}
                 </CardDescription>
               </CardHeader>
               <CardContent>

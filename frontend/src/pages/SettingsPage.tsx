@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useSettings, useProviderDetails } from '@/hooks/useSettings'
+import { useSettings } from '@/hooks/useSettings'
 import { useRuntimesStatus } from '@/hooks/useRuntimes'
 import { useClusterStatus } from '@/hooks/useClusterStatus'
 import { useHelmStatus } from '@/hooks/useInstallation'
@@ -12,11 +12,11 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/useToast'
-import { CheckCircle, XCircle, AlertCircle, Loader2, Server, Terminal, Cpu, Key, Cog, Layers } from 'lucide-react'
+import { CheckCircle, XCircle, AlertCircle, Loader2, Server, Cpu, Key, Cog, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Link } from 'react-router-dom'
 
-type SettingsTab = 'general' | 'integrations' | 'advanced'
+type SettingsTab = 'general' | 'integrations'
 
 export function SettingsPage() {
   const { isLoading: settingsLoading } = useSettings()
@@ -33,9 +33,6 @@ export function SettingsPage() {
   const [isInstallingGpu, setIsInstallingGpu] = useState(false)
   const [isConnectingHf, setIsConnectingHf] = useState(false)
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
-  const [selectedRuntimeForDetails, setSelectedRuntimeForDetails] = useState<string>('dynamo')
-
-  const { data: providerDetails } = useProviderDetails(selectedRuntimeForDetails)
 
   if (settingsLoading || clusterLoading || runtimesLoading) {
     return (
@@ -64,7 +61,6 @@ export function SettingsPage() {
   const tabs = [
     { id: 'general' as const, label: 'General', icon: Server },
     { id: 'integrations' as const, label: 'Integrations', icon: Key },
-    { id: 'advanced' as const, label: 'Advanced', icon: Terminal },
   ]
 
   return (
@@ -541,97 +537,6 @@ export function SettingsPage() {
                   )}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Advanced Tab */}
-      {activeTab === 'advanced' && (
-        <div className="space-y-6 animate-fade-in">
-          {/* Runtime Details */}
-          <Card variant="elevated">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Terminal className="h-5 w-5" />
-                Runtime Details
-              </CardTitle>
-              <CardDescription>
-                Technical details about the inference runtimes
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Runtime selector tabs */}
-              <div className="flex gap-1 border-b">
-                {runtimes.map((runtime) => (
-                  <button
-                    key={runtime.id}
-                    onClick={() => setSelectedRuntimeForDetails(runtime.id)}
-                    className={cn(
-                      'px-4 py-2 text-sm font-medium transition-all duration-200 border-b-2 -mb-px rounded-t-md',
-                      selectedRuntimeForDetails === runtime.id
-                        ? 'border-primary text-primary bg-primary/5'
-                        : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                    )}
-                  >
-                    {runtime.name}
-                  </button>
-                ))}
-              </div>
-
-              {providerDetails && (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                    <div className="p-3 rounded-lg bg-muted/50">
-                      <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider">API Group</span>
-                      <p className="font-mono text-foreground mt-1">{providerDetails.crdConfig.apiGroup}</p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-muted/50">
-                      <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider">API Version</span>
-                      <p className="font-mono text-foreground mt-1">{providerDetails.crdConfig.apiVersion}</p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-muted/50">
-                      <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider">CRD Kind</span>
-                      <p className="font-mono text-foreground mt-1">{providerDetails.crdConfig.kind}</p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-muted/50">
-                      <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider">Resource Plural</span>
-                      <p className="font-mono text-foreground mt-1">{providerDetails.crdConfig.plural}</p>
-                    </div>
-                  </div>
-
-                  {providerDetails.helmRepos.length > 0 && (
-                    <div className="pt-4 border-t">
-                      <span className="font-medium text-sm">Helm Repositories</span>
-                      <div className="mt-3 space-y-2">
-                        {providerDetails.helmRepos.map((repo, index) => (
-                          <div key={index} className="flex items-center gap-2 text-sm p-2 rounded bg-muted/30">
-                            <span className="font-mono font-medium text-primary">{repo.name}</span>
-                            <span className="text-muted-foreground">→</span>
-                            <span className="font-mono text-xs text-muted-foreground truncate">{repo.url}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Debug Info */}
-          <Card variant="outline">
-            <CardHeader>
-              <CardTitle className="text-sm font-medium text-muted-foreground">Debug Information</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-xs font-mono text-muted-foreground space-y-1">
-                <p>Runtimes: {runtimes.map(r => `${r.id}(${r.installed ? 'installed' : 'not installed'})`).join(', ')}</p>
-                <p>Cluster Connected: {clusterStatus?.connected ? 'Yes' : 'No'}</p>
-                <p>Helm Available: {helmStatus?.available ? 'Yes' : 'No'}</p>
-                <p>GPU Operator: {gpuOperatorStatus?.installed ? 'Installed' : 'Not Installed'}</p>
-                <p>HuggingFace: {hfStatus?.configured ? 'Configured' : 'Not Configured'}</p>
-              </div>
             </CardContent>
           </Card>
         </div>

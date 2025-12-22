@@ -41,6 +41,21 @@ export function useDeploymentPods(name: string | undefined, namespace?: string) 
   })
 }
 
+export function useDeploymentLogs(
+  name: string | undefined,
+  namespace?: string,
+  options?: { podName?: string; container?: string; tailLines?: number; timestamps?: boolean }
+) {
+  return useQuery({
+    queryKey: ['deployment-logs', name, namespace, options?.podName, options?.container, options?.tailLines, options?.timestamps],
+    queryFn: () => deploymentsApi.getLogs(name!, namespace, options),
+    enabled: !!name && !!options?.podName, // Require both name and podName
+    refetchInterval: 10000, // Refresh logs every 10 seconds
+    staleTime: 5000,
+    retry: 1, // Only retry once on failure
+  })
+}
+
 /**
  * Enhanced create deployment hook with granular status tracking
  * Provides status: 'idle' | 'validating' | 'submitting' | 'success' | 'error'

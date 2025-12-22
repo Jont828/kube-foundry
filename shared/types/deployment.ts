@@ -1,6 +1,7 @@
 import { Engine } from './model';
 
 export type DeploymentMode = 'aggregated' | 'disaggregated';
+export type GgufRunMode = 'build' | 'direct';
 export type RouterMode = 'none' | 'kv' | 'round-robin';
 export type DeploymentPhase = 'Pending' | 'Deploying' | 'Running' | 'Failed' | 'Terminating';
 export type PodPhase = 'Pending' | 'Running' | 'Succeeded' | 'Failed' | 'Unknown';
@@ -11,7 +12,7 @@ export interface DeploymentConfig {
   modelId: string;               // HuggingFace model ID
   engine: Engine;                // Inference engine
   mode: DeploymentMode;
-  provider?: 'dynamo' | 'kuberay';  // Runtime provider (optional during transition)
+  provider?: 'dynamo' | 'kuberay' | 'kaito';  // Runtime provider (optional during transition)
   servedModelName?: string;      // Custom model name for API
   routerMode: RouterMode;
   replicas: number;              // Number of worker replicas (aggregated mode)
@@ -31,6 +32,15 @@ export interface DeploymentConfig {
   decodeReplicas?: number;       // Number of decode worker replicas
   prefillGpus?: number;          // GPUs per prefill worker
   decodeGpus?: number;           // GPUs per decode worker
+
+  // KAITO-specific fields
+  modelSource?: 'premade' | 'huggingface';  // Model source for KAITO
+  premadeModel?: string;         // Premade model ID (e.g., 'llama3.2:1b')
+  ggufFile?: string;             // GGUF filename for build mode
+  ggufRunMode?: GgufRunMode;     // 'direct' uses runner image, 'build' builds custom image
+  imageRef?: string;             // Built/resolved image reference
+  computeType?: 'cpu' | 'gpu';   // Compute type for KAITO
+  preferredNodes?: string[];     // Preferred node names for scheduling
 }
 
 export interface PodStatus {
@@ -95,4 +105,23 @@ export interface ClusterStatus {
   namespace: string;
   clusterName?: string;
   error?: string;
+}
+
+/**
+ * Options for fetching pod logs
+ */
+export interface PodLogsOptions {
+  podName?: string;        // Specific pod to get logs from (defaults to first pod)
+  container?: string;      // Specific container name
+  tailLines?: number;      // Number of lines to return (default: 100)
+  timestamps?: boolean;    // Include timestamps in log lines
+}
+
+/**
+ * Response from pod logs endpoint
+ */
+export interface PodLogsResponse {
+  logs: string;            // Log content
+  podName: string;         // Pod the logs came from
+  container?: string;      // Container name (if specified)
 }

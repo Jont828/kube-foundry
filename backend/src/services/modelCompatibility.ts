@@ -97,6 +97,34 @@ const ENGINE_ARCHITECTURE_ALLOWLIST: Record<Engine, string[]> = {
     'BaichuanForCausalLM',
     'ChatGLMModel',
   ],
+  llamacpp: [
+    // llama.cpp supports GGUF quantized models - very broad architecture support
+    // Used by KAITO/AIKit for CPU-capable inference
+    'LlamaForCausalLM',
+    'MistralForCausalLM',
+    'MixtralForCausalLM',
+    'Qwen2ForCausalLM',
+    'Qwen2MoeForCausalLM',
+    'Qwen3ForCausalLM',
+    'GPT2LMHeadModel',
+    'GPTNeoForCausalLM',
+    'GPTNeoXForCausalLM',
+    'PhiForCausalLM',
+    'Phi3ForCausalLM',
+    'GemmaForCausalLM',
+    'Gemma2ForCausalLM',
+    'FalconForCausalLM',
+    'StableLmForCausalLM',
+    'StarCoder2ForCausalLM',
+    'BloomForCausalLM',
+    'MPTForCausalLM',
+    'InternLMForCausalLM',
+    'InternLM2ForCausalLM',
+    'DeepseekV2ForCausalLM',
+    'OlmoForCausalLM',
+    'Olmo2ForCausalLM',
+    'MiniCPMForCausalLM',
+  ],
 };
 
 /**
@@ -161,7 +189,7 @@ export function inferArchitectureFromModelId(modelId: string): string[] {
 export function getSupportedEngines(architectures: string[]): Engine[] {
   const engines: Engine[] = [];
   
-  for (const engine of ['vllm', 'sglang', 'trtllm'] as Engine[]) {
+  for (const engine of ['vllm', 'sglang', 'trtllm', 'llamacpp'] as Engine[]) {
     const allowlist = ENGINE_ARCHITECTURE_ALLOWLIST[engine];
     const isSupported = architectures.some(arch => allowlist.includes(arch));
     if (isSupported) {
@@ -282,22 +310,35 @@ export function processHfModel(model: HfApiModelResult): HfModelSearchResult {
     architectures = inferArchitectureFromModelId(model.id);
   }
   
-  const supportedEngines = getSupportedEngines(architectures);
-  const pipelineTag = model.pipeline_tag || '';
+  // Check if this is a GGUF model - GGUF models only support llama.cpp
+  // Detection: HuggingFace API sets library_name to 'gguf', or model ID contains 'gguf'
   const libraryName = model.library_name || '';
+  const isGgufModel = libraryName === 'gguf' || 
+                      model.id.toLowerCase().includes('gguf') ||
+                      model.id.toLowerCase().includes('-gguf');
+  
+  // GGUF models only support llamacpp
+  // Non-GGUF models exclude llamacpp (llama.cpp requires GGUF format, not safetensors)
+  const supportedEngines: Engine[] = isGgufModel 
+    ? ['llamacpp'] 
+    : getSupportedEngines(architectures).filter(e => e !== 'llamacpp');
+  const pipelineTag = model.pipeline_tag || '';
   
   // For gated models without metadata, assume they're compatible if we could infer architecture
   // This is because gated models (like meta-llama) are typically text-generation models
   const hasInferredCompatibility = architectures.length > 0 && supportedEngines.length > 0;
+  // GGUF models are always compatible if detected as such
+  const hasGgufCompatibility = isGgufModel && supportedEngines.length > 0;
   const hasExplicitCompatibility = 
     isPipelineTagCompatible(pipelineTag) &&
     supportedEngines.length > 0 &&
-    (libraryName === 'transformers' || libraryName === 'vllm' || libraryName === '');
+    (libraryName === 'transformers' || libraryName === 'vllm' || libraryName === 'gguf' || libraryName === '');
   
   // A model is compatible if either:
   // 1. It has explicit metadata confirming compatibility
   // 2. It's missing metadata but we could infer a supported architecture (likely a gated model)
-  const compatible = hasExplicitCompatibility || hasInferredCompatibility;
+  // 3. It's a GGUF model (always compatible with llama.cpp)
+  const compatible = hasExplicitCompatibility || hasInferredCompatibility || hasGgufCompatibility;
   
   const incompatibilityReason = compatible 
     ? undefined 

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { healthApi, type ClusterStatusResponse } from '@/lib/api'
+import { healthApi, type ClusterStatusResponse, type ClusterNode } from '@/lib/api'
 
 export function useClusterStatus() {
   return useQuery<ClusterStatusResponse>({
@@ -17,5 +17,15 @@ export function useClusterStatus() {
     },
     refetchInterval: 30000, // Check every 30 seconds
     retry: false,
+  })
+}
+
+export function useClusterNodes(enabled: boolean = true) {
+  return useQuery<{ nodes: ClusterNode[] }>({
+    queryKey: ['cluster-nodes'],
+    queryFn: () => healthApi.getClusterNodes(),
+    enabled,
+    staleTime: 60000, // 1 minute
+    retry: 1,
   })
 }

@@ -50,10 +50,6 @@ export function AutoscalerGuidance({ autoscaler, variant = 'default', className 
           label: 'Setup Guide (AKS)',
           href: 'https://github.com/sozercan/kube-foundry/blob/main/docs/azure-autoscaling.md#option-1-aks-managed-autoscaler-recommended',
         },
-        {
-          label: 'Setup Guide (Self-Managed)',
-          href: 'https://github.com/sozercan/kube-foundry/blob/main/docs/azure-autoscaling.md#option-2-self-managed-cluster-autoscaler',
-        },
       ],
     };
   };

@@ -19,7 +19,7 @@ describe('DynamoProvider', () => {
   describe('getCRDConfig', () => {
     test('returns correct CRD configuration', () => {
       const config = provider.getCRDConfig();
-      expect(config.apiGroup).toBe('dynamo.nvidia.com');
+      expect(config.apiGroup).toBe('nvidia.com');
       expect(config.apiVersion).toBe('v1alpha1');
       expect(config.plural).toBe('dynamographdeployments');
       expect(config.kind).toBe('DynamoGraphDeployment');
@@ -44,7 +44,7 @@ describe('DynamoProvider', () => {
     test('generates valid aggregated manifest', () => {
       const manifest = provider.generateManifest(baseConfig);
 
-      expect(manifest.apiVersion).toBe('dynamo.nvidia.com/v1alpha1');
+      expect(manifest.apiVersion).toBe('nvidia.com/v1alpha1');
       expect(manifest.kind).toBe('DynamoGraphDeployment');
       expect((manifest.metadata as any).name).toBe('test-deployment');
       expect((manifest.metadata as any).namespace).toBe('test-ns');
@@ -271,18 +271,20 @@ describe('DynamoProvider', () => {
       expect(steps[0].command).toBeDefined();
     });
 
-    test('getHelmRepos returns nvidia repo', () => {
+    test('getHelmRepos returns empty array (uses direct fetch URLs)', () => {
       const repos = provider.getHelmRepos();
-      expect(repos.length).toBe(1);
-      expect(repos[0].name).toBe('nvidia');
-      expect(repos[0].url).toContain('ngc.nvidia.com');
+      expect(repos.length).toBe(0);
     });
 
-    test('getHelmCharts returns dynamo-operator chart', () => {
+    test('getHelmCharts returns dynamo-crds and dynamo-platform charts', () => {
       const charts = provider.getHelmCharts();
-      expect(charts.length).toBe(1);
-      expect(charts[0].name).toBe('dynamo-operator');
-      expect(charts[0].namespace).toBe('dynamo-system');
+      expect(charts.length).toBe(2);
+      expect(charts[0].name).toBe('dynamo-crds');
+      expect(charts[0].namespace).toBe('default');
+      expect(charts[0].fetchUrl).toContain('dynamo-crds');
+      expect(charts[1].name).toBe('dynamo-platform');
+      expect(charts[1].namespace).toBe('dynamo-system');
+      expect(charts[1].fetchUrl).toContain('dynamo-platform');
     });
   });
 
