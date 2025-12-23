@@ -15,33 +15,8 @@ env:
 
 jobs:
   build:
-    name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: linux-x64
-            os: ubuntu-latest
-            script: compile:linux-x64
-            artifact: kubefoundry-linux-x64
-          - target: linux-arm64
-            os: ubuntu-latest
-            script: compile:linux-arm64
-            artifact: kubefoundry-linux-arm64
-          - target: darwin-x64
-            os: macos-latest
-            script: compile:darwin-x64
-            artifact: kubefoundry-darwin-x64
-          - target: darwin-arm64
-            os: macos-latest
-            script: compile:darwin-arm64
-            artifact: kubefoundry-darwin-arm64
-          - target: windows-x64
-            os: windows-latest
-            script: compile:windows-x64
-            artifact: kubefoundry-windows-x64.exe
-
+    name: Build All Binaries
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
@@ -64,14 +39,48 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Compile binary
-        run: cd backend && VERSION=${{ steps.version.outputs.VERSION }} bun run ${{ matrix.script }}
+      - name: Compile all binaries
+        run: |
+          cd backend
+          VERSION=${{ steps.version.outputs.VERSION }} bun run compile:linux-x64
+          VERSION=${{ steps.version.outputs.VERSION }} bun run compile:linux-arm64
+          VERSION=${{ steps.version.outputs.VERSION }} bun run compile:darwin-x64
+          VERSION=${{ steps.version.outputs.VERSION }} bun run compile:darwin-arm64
+          VERSION=${{ steps.version.outputs.VERSION }} bun run compile:windows-x64
 
-      - name: Upload artifact
+      - name: Upload Linux x64
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          name: kubefoundry-linux-x64
+          path: dist/kubefoundry-linux-x64
+          if-no-files-found: error
+
+      - name: Upload Linux arm64
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kubefoundry-linux-arm64
+          path: dist/kubefoundry-linux-arm64
+          if-no-files-found: error
+
+      - name: Upload macOS x64
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kubefoundry-darwin-x64
+          path: dist/kubefoundry-darwin-x64
+          if-no-files-found: error
+
+      - name: Upload macOS arm64
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kubefoundry-darwin-arm64
+          path: dist/kubefoundry-darwin-arm64
+          if-no-files-found: error
+
+      - name: Upload Windows x64
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kubefoundry-windows-x64.exe
+          path: dist/kubefoundry-windows-x64.exe
           if-no-files-found: error
 
   release:
