@@ -7,6 +7,13 @@ import logger from '../../lib/logger';
 // Default fallback version if GitHub fetch fails
 const DEFAULT_DYNAMO_VERSION = '0.7.1';
 
+// NVIDIA Dynamo runtime images
+const DYNAMO_RUNTIME_IMAGES = {
+  vllm: 'nvcr.io/nvidia/ai-dynamo/vllm-runtime',
+  sglang: 'nvcr.io/nvidia/ai-dynamo/sglang-runtime',
+  trtllm: 'nvcr.io/nvidia/ai-dynamo/tensorrtllm-runtime',
+} as const;
+
 // GitHub API URL for Dynamo releases
 const GITHUB_RELEASES_URL = 'https://api.github.com/repos/ai-dynamo/dynamo/releases/latest';
 
@@ -108,10 +115,17 @@ export class DynamoProvider implements Provider {
 
   /**
    * Generate manifest for aggregated (standard) serving mode
+   * Uses the correct DynamoGraphDeployment spec.services format
    */
   private generateAggregatedManifest(config: DynamoDeploymentConfig): Record<string, unknown> {
     const workerSpec = this.generateWorkerSpec(config);
     const frontendSpec = this.generateFrontendSpec(config);
+
+    // Build services map with Frontend and appropriate worker
+    const services: Record<string, unknown> = {
+      Frontend: frontendSpec,
+      ...workerSpec,
+    };
 
     return {
       apiVersion: `${DynamoProvider.API_GROUP}/${DynamoProvider.API_VERSION}`,
@@ -123,11 +137,12 @@ export class DynamoProvider implements Provider {
           'app.kubernetes.io/name': 'kubefoundry',
           'app.kubernetes.io/instance': config.name,
           'app.kubernetes.io/managed-by': 'kubefoundry',
+          'kubefoundry.io/provider': 'dynamo',
         },
       },
       spec: {
-        Frontend: frontendSpec,
-        ...workerSpec,
+        backendFramework: config.engine,
+        services,
       },
     };
   }
@@ -135,11 +150,19 @@ export class DynamoProvider implements Provider {
   /**
    * Generate manifest for disaggregated (P/D) serving mode
    * Creates separate prefill and decode workers with engine-specific flags
+   * Uses the correct DynamoGraphDeployment spec.services format
    */
   private generateDisaggregatedManifest(config: DynamoDeploymentConfig): Record<string, unknown> {
     const frontendSpec = this.generateFrontendSpec(config);
     const prefillWorkerSpec = this.generateDisaggregatedWorkerSpec(config, 'prefill');
     const decodeWorkerSpec = this.generateDisaggregatedWorkerSpec(config, 'decode');
+
+    // Build services map with Frontend and both prefill/decode workers
+    const services: Record<string, unknown> = {
+      Frontend: frontendSpec,
+      ...prefillWorkerSpec,
+      ...decodeWorkerSpec,
+    };
 
     return {
       apiVersion: `${DynamoProvider.API_GROUP}/${DynamoProvider.API_VERSION}`,
@@ -151,20 +174,24 @@ export class DynamoProvider implements Provider {
           'app.kubernetes.io/name': 'kubefoundry',
           'app.kubernetes.io/instance': config.name,
           'app.kubernetes.io/managed-by': 'kubefoundry',
+          'kubefoundry.io/provider': 'dynamo',
         },
       },
       spec: {
-        Frontend: frontendSpec,
-        ...prefillWorkerSpec,
-        ...decodeWorkerSpec,
+        backendFramework: config.engine,
+        services,
       },
     };
   }
 
   private generateFrontendSpec(config: DynamoDeploymentConfig): Record<string, unknown> {
+    const version = getDynamoVersion();
+    const runtimeImage = `${DYNAMO_RUNTIME_IMAGES[config.engine]}:${version}`;
+
     const spec: Record<string, unknown> = {
+      componentType: 'frontend',
+      dynamoNamespace: config.name,
       replicas: 1,
-      'http-port': 8000,
     };
 
     // Use round-robin router for disaggregated mode if not specified
@@ -176,56 +203,99 @@ export class DynamoProvider implements Provider {
       spec['router-mode'] = routerMode;
     }
 
+    // Add HF token secret for frontend as well
+    if (config.hfTokenSecret) {
+      spec.envFromSecret = config.hfTokenSecret;
+    }
+
+    // Add extraPodSpec with image in mainContainer
+    spec.extraPodSpec = {
+      mainContainer: {
+        image: runtimeImage,
+        workingDir: '/workspace/examples/backends/' + config.engine,
+      },
+    };
+
     return spec;
   }
 
   private generateWorkerSpec(config: DynamoDeploymentConfig): Record<string, unknown> {
+    const version = getDynamoVersion();
+    const runtimeImage = `${DYNAMO_RUNTIME_IMAGES[config.engine]}:${version}`;
+
     const baseSpec: Record<string, unknown> = {
-      'model-path': config.modelId,
-      'served-model-name': config.servedModelName || config.modelId,
+      componentType: 'worker',
+      dynamoNamespace: config.name,
       replicas: config.replicas,
-      envFrom: [
-        {
-          secretRef: {
-            name: config.hfTokenSecret,
-          },
-        },
-      ],
     };
 
-    // Add common options
-    if (config.enforceEager) {
-      baseSpec['enforce-eager'] = true;
+    // Add HF token secret
+    if (config.hfTokenSecret) {
+      baseSpec.envFromSecret = config.hfTokenSecret;
     }
 
-    if (config.enablePrefixCaching) {
-      baseSpec['enable-prefix-caching'] = true;
-    }
-
-    if (config.trustRemoteCode) {
-      baseSpec['trust-remote-code'] = true;
-    }
-
-    if (config.contextLength) {
-      baseSpec['max-model-len'] = config.contextLength;
-    }
-
-    // Add resource requirements
+    // Add resource requirements in the correct format
     if (config.resources) {
       baseSpec.resources = {
         limits: {
-          'nvidia.com/gpu': config.resources.gpu,
+          'nvidia.com/gpu': String(config.resources.gpu),
+          ...(config.resources.memory && { memory: config.resources.memory }),
+        },
+        requests: {
+          'nvidia.com/gpu': String(config.resources.gpu),
           ...(config.resources.memory && { memory: config.resources.memory }),
         },
       };
     }
 
+    // Build extraPodSpec with mainContainer for model configuration
+    const mainContainer: Record<string, unknown> = {
+      image: runtimeImage,
+      workingDir: '/workspace/examples/backends/' + config.engine,
+    };
+
+    // Build args for the inference engine
+    const args: string[] = [];
+    args.push(`python3 -m dynamo.${config.engine}`);
+    args.push(`--model ${config.modelId}`);
+    
+    if (config.servedModelName) {
+      args.push(`--served-model-name ${config.servedModelName}`);
+    }
+
+    if (config.enforceEager) {
+      args.push('--enforce-eager');
+    }
+
+    if (config.enablePrefixCaching) {
+      args.push('--enable-prefix-caching');
+    }
+
+    if (config.trustRemoteCode) {
+      args.push('--trust-remote-code');
+    }
+
+    if (config.contextLength) {
+      args.push(`--max-model-len ${config.contextLength}`);
+    }
+
     // Add engine-specific arguments
     if (config.engineArgs) {
       Object.entries(config.engineArgs).forEach(([key, value]) => {
-        baseSpec[key] = value;
+        if (typeof value === 'boolean' && value) {
+          args.push(`--${key}`);
+        } else if (typeof value !== 'boolean') {
+          args.push(`--${key} ${value}`);
+        }
       });
     }
+
+    mainContainer.command = ['/bin/sh', '-c'];
+    mainContainer.args = [args.join(' ')];
+
+    baseSpec.extraPodSpec = {
+      mainContainer,
+    };
 
     // Return with appropriate worker key based on engine
     switch (config.engine) {
@@ -254,97 +324,138 @@ export class DynamoProvider implements Provider {
     const isPrefill = role === 'prefill';
     const replicas = isPrefill ? (config.prefillReplicas || 1) : (config.decodeReplicas || 1);
     const gpus = isPrefill ? (config.prefillGpus || 1) : (config.decodeGpus || 1);
+    const version = getDynamoVersion();
+    const runtimeImage = `${DYNAMO_RUNTIME_IMAGES[config.engine]}:${version}`;
 
     const baseSpec: Record<string, unknown> = {
-      'model-path': config.modelId,
-      'served-model-name': config.servedModelName || config.modelId,
+      componentType: 'worker',
+      subComponentType: role,
+      dynamoNamespace: config.name,
       replicas,
-      envFrom: [
-        {
-          secretRef: {
-            name: config.hfTokenSecret,
-          },
-        },
-      ],
-      resources: {
-        limits: {
-          'nvidia.com/gpu': gpus,
-          ...(config.resources?.memory && { memory: config.resources.memory }),
-        },
+    };
+
+    // Add HF token secret
+    if (config.hfTokenSecret) {
+      baseSpec.envFromSecret = config.hfTokenSecret;
+    }
+
+    // Add resource requirements
+    baseSpec.resources = {
+      limits: {
+        'nvidia.com/gpu': String(gpus),
+        ...(config.resources?.memory && { memory: config.resources.memory }),
+      },
+      requests: {
+        'nvidia.com/gpu': String(gpus),
+        ...(config.resources?.memory && { memory: config.resources.memory }),
       },
     };
 
-    // Add common options
+    // Build args for the inference engine
+    const args: string[] = [];
+    args.push(`python3 -m dynamo.${config.engine}`);
+    args.push(`--model ${config.modelId}`);
+    
+    if (config.servedModelName) {
+      args.push(`--served-model-name ${config.servedModelName}`);
+    }
+
     if (config.enforceEager) {
-      baseSpec['enforce-eager'] = true;
+      args.push('--enforce-eager');
     }
 
     if (config.enablePrefixCaching) {
-      baseSpec['enable-prefix-caching'] = true;
+      args.push('--enable-prefix-caching');
     }
 
     if (config.trustRemoteCode) {
-      baseSpec['trust-remote-code'] = true;
+      args.push('--trust-remote-code');
     }
 
     if (config.contextLength) {
-      baseSpec['max-model-len'] = config.contextLength;
-    }
-
-    // Add engine-specific arguments
-    if (config.engineArgs) {
-      Object.entries(config.engineArgs).forEach(([key, value]) => {
-        baseSpec[key] = value;
-      });
+      args.push(`--max-model-len ${config.contextLength}`);
     }
 
     // Add engine-specific disaggregation flags
     switch (config.engine) {
       case 'vllm':
-        // vLLM uses --is-prefill-worker flag for prefill workers only
         if (isPrefill) {
-          baseSpec['is-prefill-worker'] = true;
+          args.push('--is-prefill-worker');
         }
-        return { [`Vllm${isPrefill ? 'Prefill' : 'Decode'}Worker`]: baseSpec };
-
+        break;
       case 'sglang':
-        // SGLang uses --disaggregation-mode prefill|decode
-        baseSpec['disaggregation-mode'] = role;
-        return { [`Sglang${isPrefill ? 'Prefill' : 'Decode'}Worker`]: baseSpec };
-
       case 'trtllm':
-        // TRT-LLM uses --disaggregation-mode prefill|decode
-        baseSpec['disaggregation-mode'] = role;
-        return { [`Trtllm${isPrefill ? 'Prefill' : 'Decode'}Worker`]: baseSpec };
+        args.push(`--disaggregation-mode ${role}`);
+        break;
+    }
 
-      default:
-        if (isPrefill) {
-          baseSpec['is-prefill-worker'] = true;
+    // Add engine-specific arguments
+    if (config.engineArgs) {
+      Object.entries(config.engineArgs).forEach(([key, value]) => {
+        if (typeof value === 'boolean' && value) {
+          args.push(`--${key}`);
+        } else if (typeof value !== 'boolean') {
+          args.push(`--${key} ${value}`);
         }
+      });
+    }
+
+    baseSpec.extraPodSpec = {
+      mainContainer: {
+        image: runtimeImage,
+        workingDir: '/workspace/examples/backends/' + config.engine,
+        command: ['/bin/sh', '-c'],
+        args: [args.join(' ')],
+      },
+    };
+
+    // Return with appropriate worker key based on engine
+    switch (config.engine) {
+      case 'vllm':
+        return { [`Vllm${isPrefill ? 'Prefill' : 'Decode'}Worker`]: baseSpec };
+      case 'sglang':
+        return { [`Sglang${isPrefill ? 'Prefill' : 'Decode'}Worker`]: baseSpec };
+      case 'trtllm':
+        return { [`Trtllm${isPrefill ? 'Prefill' : 'Decode'}Worker`]: baseSpec };
+      default:
         return { [`Vllm${isPrefill ? 'Prefill' : 'Decode'}Worker`]: baseSpec };
     }
   }
 
   parseStatus(raw: unknown): DeploymentStatus {
+    interface WorkerSpec {
+      replicas?: number;
+      componentType?: string;
+      dynamoNamespace?: string;
+      extraPodSpec?: {
+        mainContainer?: {
+          args?: string[];
+        };
+      };
+    }
+
     const obj = raw as {
       metadata?: { name?: string; namespace?: string; creationTimestamp?: string };
       spec?: {
-        VllmWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
-        SglangWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
-        TrtllmWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
-        // Disaggregated worker types
-        VllmPrefillWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
-        VllmDecodeWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
-        SglangPrefillWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
-        SglangDecodeWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
-        TrtllmPrefillWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
-        TrtllmDecodeWorker?: { 'model-path'?: string; 'served-model-name'?: string; replicas?: number };
-        Frontend?: { replicas?: number };
+        backendFramework?: string;
+        services?: Record<string, WorkerSpec>;
+        // Legacy format support (direct workers in spec)
+        VllmWorker?: WorkerSpec;
+        SglangWorker?: WorkerSpec;
+        TrtllmWorker?: WorkerSpec;
+        VllmPrefillWorker?: WorkerSpec;
+        VllmDecodeWorker?: WorkerSpec;
+        SglangPrefillWorker?: WorkerSpec;
+        SglangDecodeWorker?: WorkerSpec;
+        TrtllmPrefillWorker?: WorkerSpec;
+        TrtllmDecodeWorker?: WorkerSpec;
+        Frontend?: WorkerSpec;
       };
       status?: {
         phase?: string;
+        state?: string;
         replicas?: { ready?: number; available?: number; desired?: number };
-        // Disaggregated status (if supported by operator)
+        services?: Record<string, { desired?: number; ready?: number; available?: number }>;
         prefillReplicas?: { ready?: number; desired?: number };
         decodeReplicas?: { ready?: number; desired?: number };
         conditions?: Array<{
@@ -360,56 +471,90 @@ export class DynamoProvider implements Provider {
     const spec = obj.spec || {};
     const status = obj.status || {};
 
-    // Determine engine and mode from spec
+    // Get services from the new format, or build from legacy format
+    const services = spec.services || {} as Record<string, WorkerSpec>;
+    
+    // If no services map, check for legacy format (workers directly in spec)
+    const hasLegacyFormat = !spec.services && (
+      spec.VllmWorker || spec.SglangWorker || spec.TrtllmWorker ||
+      spec.VllmPrefillWorker || spec.VllmDecodeWorker ||
+      spec.SglangPrefillWorker || spec.SglangDecodeWorker ||
+      spec.TrtllmPrefillWorker || spec.TrtllmDecodeWorker
+    );
+    
+    if (hasLegacyFormat) {
+      // Copy legacy workers to services for unified processing
+      if (spec.VllmWorker) services.VllmWorker = spec.VllmWorker;
+      if (spec.SglangWorker) services.SglangWorker = spec.SglangWorker;
+      if (spec.TrtllmWorker) services.TrtllmWorker = spec.TrtllmWorker;
+      if (spec.VllmPrefillWorker) services.VllmPrefillWorker = spec.VllmPrefillWorker;
+      if (spec.VllmDecodeWorker) services.VllmDecodeWorker = spec.VllmDecodeWorker;
+      if (spec.SglangPrefillWorker) services.SglangPrefillWorker = spec.SglangPrefillWorker;
+      if (spec.SglangDecodeWorker) services.SglangDecodeWorker = spec.SglangDecodeWorker;
+      if (spec.TrtllmPrefillWorker) services.TrtllmPrefillWorker = spec.TrtllmPrefillWorker;
+      if (spec.TrtllmDecodeWorker) services.TrtllmDecodeWorker = spec.TrtllmDecodeWorker;
+      if (spec.Frontend) services.Frontend = spec.Frontend;
+    }
+
+    // Determine engine from backendFramework or from service keys
     let engine: 'vllm' | 'sglang' | 'trtllm' = 'vllm';
+    if (spec.backendFramework) {
+      engine = spec.backendFramework as 'vllm' | 'sglang' | 'trtllm';
+    } else {
+      // Infer from service keys
+      for (const key of Object.keys(services)) {
+        if (key.toLowerCase().includes('vllm')) { engine = 'vllm'; break; }
+        if (key.toLowerCase().includes('sglang')) { engine = 'sglang'; break; }
+        if (key.toLowerCase().includes('trtllm')) { engine = 'trtllm'; break; }
+      }
+    }
+
+    // Extract model info from worker args
     let modelId = '';
     let servedModelName = '';
     let desiredReplicas = 1;
     let mode: 'aggregated' | 'disaggregated' = 'aggregated';
-
-    // Check for disaggregated workers first
     let prefillDesired = 0;
     let decodeDesired = 0;
 
-    if (spec.VllmPrefillWorker || spec.VllmDecodeWorker) {
-      engine = 'vllm';
+    // Check for disaggregated workers
+    const prefillWorker = services.VllmPrefillWorker || services.SglangPrefillWorker || services.TrtllmPrefillWorker;
+    const decodeWorker = services.VllmDecodeWorker || services.SglangDecodeWorker || services.TrtllmDecodeWorker;
+    
+    if (prefillWorker || decodeWorker) {
       mode = 'disaggregated';
-      modelId = spec.VllmPrefillWorker?.['model-path'] || spec.VllmDecodeWorker?.['model-path'] || '';
-      servedModelName = spec.VllmPrefillWorker?.['served-model-name'] || spec.VllmDecodeWorker?.['served-model-name'] || '';
-      prefillDesired = spec.VllmPrefillWorker?.replicas || 0;
-      decodeDesired = spec.VllmDecodeWorker?.replicas || 0;
+      const worker = prefillWorker || decodeWorker;
+      // Try to extract model from args
+      const args = worker?.extraPodSpec?.mainContainer?.args?.[0] || '';
+      const modelMatch = args.match(/--model\s+(\S+)/);
+      if (modelMatch) modelId = modelMatch[1];
+      const servedMatch = args.match(/--served-model-name\s+(\S+)/);
+      if (servedMatch) servedModelName = servedMatch[1];
+      prefillDesired = prefillWorker?.replicas || 0;
+      decodeDesired = decodeWorker?.replicas || 0;
       desiredReplicas = prefillDesired + decodeDesired;
-    } else if (spec.SglangPrefillWorker || spec.SglangDecodeWorker) {
-      engine = 'sglang';
-      mode = 'disaggregated';
-      modelId = spec.SglangPrefillWorker?.['model-path'] || spec.SglangDecodeWorker?.['model-path'] || '';
-      servedModelName = spec.SglangPrefillWorker?.['served-model-name'] || spec.SglangDecodeWorker?.['served-model-name'] || '';
-      prefillDesired = spec.SglangPrefillWorker?.replicas || 0;
-      decodeDesired = spec.SglangDecodeWorker?.replicas || 0;
-      desiredReplicas = prefillDesired + decodeDesired;
-    } else if (spec.TrtllmPrefillWorker || spec.TrtllmDecodeWorker) {
-      engine = 'trtllm';
-      mode = 'disaggregated';
-      modelId = spec.TrtllmPrefillWorker?.['model-path'] || spec.TrtllmDecodeWorker?.['model-path'] || '';
-      servedModelName = spec.TrtllmPrefillWorker?.['served-model-name'] || spec.TrtllmDecodeWorker?.['served-model-name'] || '';
-      prefillDesired = spec.TrtllmPrefillWorker?.replicas || 0;
-      decodeDesired = spec.TrtllmDecodeWorker?.replicas || 0;
-      desiredReplicas = prefillDesired + decodeDesired;
-    } else if (spec.VllmWorker) {
-      engine = 'vllm';
-      modelId = spec.VllmWorker['model-path'] || '';
-      servedModelName = spec.VllmWorker['served-model-name'] || '';
-      desiredReplicas = spec.VllmWorker.replicas || 1;
-    } else if (spec.SglangWorker) {
-      engine = 'sglang';
-      modelId = spec.SglangWorker['model-path'] || '';
-      servedModelName = spec.SglangWorker['served-model-name'] || '';
-      desiredReplicas = spec.SglangWorker.replicas || 1;
-    } else if (spec.TrtllmWorker) {
-      engine = 'trtllm';
-      modelId = spec.TrtllmWorker['model-path'] || '';
-      servedModelName = spec.TrtllmWorker['served-model-name'] || '';
-      desiredReplicas = spec.TrtllmWorker.replicas || 1;
+    } else {
+      // Aggregated mode - find worker
+      const worker = services.VllmWorker || services.SglangWorker || services.TrtllmWorker;
+      if (worker) {
+        desiredReplicas = worker.replicas || 1;
+        // Try to extract model from args
+        const args = worker.extraPodSpec?.mainContainer?.args?.[0] || '';
+        const modelMatch = args.match(/--model\s+(\S+)/);
+        if (modelMatch) modelId = modelMatch[1];
+        const servedMatch = args.match(/--served-model-name\s+(\S+)/);
+        if (servedMatch) servedModelName = servedMatch[1];
+      }
+    }
+
+    // Determine phase from status
+    let phase: DeploymentPhase = 'Pending';
+    if (status.state === 'successful') {
+      phase = 'Running';
+    } else if (status.phase) {
+      phase = status.phase as DeploymentPhase;
+    } else if (status.conditions?.some(c => c.type === 'Ready' && c.status === 'True')) {
+      phase = 'Running';
     }
 
     const result: DeploymentStatus = {
@@ -419,7 +564,7 @@ export class DynamoProvider implements Provider {
       servedModelName: servedModelName || obj.metadata?.name || 'unknown',
       engine,
       mode,
-      phase: (status.phase as DeploymentPhase) || 'Pending',
+      phase,
       provider: this.id,
       replicas: {
         desired: status.replicas?.desired || desiredReplicas,

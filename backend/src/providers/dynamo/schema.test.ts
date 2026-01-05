@@ -202,11 +202,18 @@ describe('dynamoManifestSchema', () => {
       namespace: 'kubefoundry-system',
     },
     spec: {
-      Frontend: {},
+      backendFramework: 'vllm',
+      services: {
+        Frontend: {
+          componentType: 'frontend',
+          dynamoNamespace: 'my-deployment',
+          replicas: 1,
+        },
+      },
     },
   };
 
-  it('accepts valid minimal manifest', () => {
+  it('accepts valid minimal manifest with spec.services', () => {
     const result = dynamoManifestSchema.safeParse(validManifest);
     expect(result.success).toBe(true);
   });
@@ -218,6 +225,7 @@ describe('dynamoManifestSchema', () => {
         ...validManifest.metadata,
         labels: {
           'app.kubernetes.io/name': 'my-app',
+          'kubefoundry.io/provider': 'dynamo',
         },
       },
     });
@@ -228,10 +236,15 @@ describe('dynamoManifestSchema', () => {
     const result = dynamoManifestSchema.safeParse({
       ...validManifest,
       spec: {
-        Frontend: {
-          replicas: 2,
-          'http-port': 8080,
-          'router-mode': 'kv',
+        ...validManifest.spec,
+        services: {
+          Frontend: {
+            componentType: 'frontend',
+            dynamoNamespace: 'my-deployment',
+            replicas: 2,
+            'router-mode': 'kv',
+            envFromSecret: 'hf-token',
+          },
         },
       },
     });
@@ -254,13 +267,39 @@ describe('dynamoManifestSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('accepts additional worker specs in spec (passthrough)', () => {
+  it('accepts additional worker specs in spec.services (passthrough)', () => {
     const result = dynamoManifestSchema.safeParse({
       ...validManifest,
       spec: {
-        Frontend: {},
-        VllmWorker: {
-          model: 'Qwen/Qwen3-0.6B',
+        backendFramework: 'vllm',
+        services: {
+          Frontend: {
+            componentType: 'frontend',
+            dynamoNamespace: 'my-deployment',
+            replicas: 1,
+          },
+          VllmWorker: {
+            componentType: 'worker',
+            dynamoNamespace: 'my-deployment',
+            replicas: 1,
+            envFromSecret: 'hf-token',
+          },
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts backendFramework field', () => {
+    const result = dynamoManifestSchema.safeParse({
+      ...validManifest,
+      spec: {
+        backendFramework: 'sglang',
+        services: {
+          Frontend: {
+            componentType: 'frontend',
+            replicas: 1,
+          },
         },
       },
     });

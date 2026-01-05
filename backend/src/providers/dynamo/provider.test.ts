@@ -50,45 +50,61 @@ describe('DynamoProvider', () => {
       expect((manifest.metadata as any).namespace).toBe('test-ns');
     });
 
-    test('includes VllmWorker for vllm engine', () => {
+    test('includes VllmWorker in spec.services for vllm engine', () => {
       const manifest = provider.generateManifest(baseConfig);
-      expect((manifest.spec as any).VllmWorker).toBeDefined();
-      expect((manifest.spec as any).VllmWorker['model-path']).toBe('meta-llama/Llama-3.2-1B');
+      const services = (manifest.spec as any).services;
+      expect(services.VllmWorker).toBeDefined();
+      expect(services.VllmWorker.componentType).toBe('worker');
+      expect(services.VllmWorker.dynamoNamespace).toBe('test-deployment');
+      expect(services.VllmWorker.extraPodSpec.mainContainer.image).toMatch(/nvcr\.io\/nvidia\/ai-dynamo\/vllm-runtime:/);
     });
 
-    test('includes SglangWorker for sglang engine', () => {
+    test('includes SglangWorker in spec.services for sglang engine', () => {
       const manifest = provider.generateManifest({ ...baseConfig, engine: 'sglang' });
-      expect((manifest.spec as any).SglangWorker).toBeDefined();
+      const services = (manifest.spec as any).services;
+      expect(services.SglangWorker).toBeDefined();
+      expect(services.SglangWorker.componentType).toBe('worker');
+      expect(services.SglangWorker.extraPodSpec.mainContainer.image).toMatch(/nvcr\.io\/nvidia\/ai-dynamo\/sglang-runtime:/);
     });
 
-    test('includes TrtllmWorker for trtllm engine', () => {
+    test('includes TrtllmWorker in spec.services for trtllm engine', () => {
       const manifest = provider.generateManifest({ ...baseConfig, engine: 'trtllm' });
-      expect((manifest.spec as any).TrtllmWorker).toBeDefined();
+      const services = (manifest.spec as any).services;
+      expect(services.TrtllmWorker).toBeDefined();
+      expect(services.TrtllmWorker.componentType).toBe('worker');
+      expect(services.TrtllmWorker.extraPodSpec.mainContainer.image).toMatch(/nvcr\.io\/nvidia\/ai-dynamo\/tensorrtllm-runtime:/);
     });
 
-    test('includes Frontend spec', () => {
+    test('includes Frontend in spec.services', () => {
       const manifest = provider.generateManifest(baseConfig);
-      expect((manifest.spec as any).Frontend).toBeDefined();
-      expect((manifest.spec as any).Frontend.replicas).toBe(1);
-      expect((manifest.spec as any).Frontend['http-port']).toBe(8000);
+      const services = (manifest.spec as any).services;
+      expect(services.Frontend).toBeDefined();
+      expect(services.Frontend.componentType).toBe('frontend');
+      expect(services.Frontend.dynamoNamespace).toBe('test-deployment');
+      expect(services.Frontend.replicas).toBe(1);
     });
 
-    test('includes kubefoundry labels', () => {
+    test('includes backendFramework in spec', () => {
+      const manifest = provider.generateManifest(baseConfig);
+      expect((manifest.spec as any).backendFramework).toBe('vllm');
+    });
+
+    test('includes kubefoundry labels including provider label', () => {
       const manifest = provider.generateManifest(baseConfig);
       const labels = (manifest.metadata as any).labels;
       expect(labels['app.kubernetes.io/name']).toBe('kubefoundry');
       expect(labels['app.kubernetes.io/instance']).toBe('test-deployment');
       expect(labels['app.kubernetes.io/managed-by']).toBe('kubefoundry');
+      expect(labels['kubefoundry.io/provider']).toBe('dynamo');
     });
 
-    test('includes hfTokenSecret as envFrom', () => {
+    test('includes hfTokenSecret as envFromSecret', () => {
       const manifest = provider.generateManifest(baseConfig);
-      const envFrom = (manifest.spec as any).VllmWorker.envFrom;
-      expect(envFrom).toBeDefined();
-      expect(envFrom[0].secretRef.name).toBe('hf-token');
+      const services = (manifest.spec as any).services;
+      expect(services.VllmWorker.envFromSecret).toBe('hf-token');
     });
 
-    test('generates disaggregated manifest with separate workers', () => {
+    test('generates disaggregated manifest with separate workers in spec.services', () => {
       const config = {
         ...baseConfig,
         mode: 'disaggregated' as const,
@@ -99,12 +115,16 @@ describe('DynamoProvider', () => {
       };
 
       const manifest = provider.generateManifest(config);
+      const services = (manifest.spec as any).services;
 
-      expect((manifest.spec as any).VllmPrefillWorker).toBeDefined();
-      expect((manifest.spec as any).VllmDecodeWorker).toBeDefined();
-      expect((manifest.spec as any).VllmPrefillWorker.replicas).toBe(2);
-      expect((manifest.spec as any).VllmDecodeWorker.replicas).toBe(3);
-      expect((manifest.spec as any).VllmPrefillWorker['is-prefill-worker']).toBe(true);
+      expect(services.VllmPrefillWorker).toBeDefined();
+      expect(services.VllmDecodeWorker).toBeDefined();
+      expect(services.VllmPrefillWorker.replicas).toBe(2);
+      expect(services.VllmDecodeWorker.replicas).toBe(3);
+      expect(services.VllmPrefillWorker.subComponentType).toBe('prefill');
+      expect(services.VllmDecodeWorker.subComponentType).toBe('decode');
+      expect(services.VllmPrefillWorker.extraPodSpec.mainContainer.image).toMatch(/nvcr\.io\/nvidia\/ai-dynamo\/vllm-runtime:/);
+      expect(services.VllmDecodeWorker.extraPodSpec.mainContainer.image).toMatch(/nvcr\.io\/nvidia\/ai-dynamo\/vllm-runtime:/);
     });
 
     test('disaggregated mode sets router-mode to round-robin by default', () => {
@@ -114,15 +134,19 @@ describe('DynamoProvider', () => {
       };
 
       const manifest = provider.generateManifest(config);
-      expect((manifest.spec as any).Frontend['router-mode']).toBe('round-robin');
+      const services = (manifest.spec as any).services;
+      expect(services.Frontend['router-mode']).toBe('round-robin');
     });
 
-    test('sets max-model-len from contextLength', () => {
+    test('worker includes model in extraPodSpec.mainContainer.args', () => {
       const manifest = provider.generateManifest({
         ...baseConfig,
         contextLength: 8192,
       });
-      expect((manifest.spec as any).VllmWorker['max-model-len']).toBe(8192);
+      const services = (manifest.spec as any).services;
+      const args = services.VllmWorker.extraPodSpec.mainContainer.args[0];
+      expect(args).toContain('--model meta-llama/Llama-3.2-1B');
+      expect(args).toContain('--max-model-len 8192');
     });
 
     test('sets GPU resources when specified', () => {
@@ -130,14 +154,15 @@ describe('DynamoProvider', () => {
         ...baseConfig,
         resources: { gpu: 2, memory: '16Gi' },
       });
-      const resources = (manifest.spec as any).VllmWorker.resources;
-      expect(resources.limits['nvidia.com/gpu']).toBe(2);
+      const services = (manifest.spec as any).services;
+      const resources = services.VllmWorker.resources;
+      expect(resources.limits['nvidia.com/gpu']).toBe('2');
       expect(resources.limits.memory).toBe('16Gi');
     });
   });
 
   describe('parseStatus', () => {
-    test('parses basic deployment status', () => {
+    test('parses basic deployment status from spec.services format', () => {
       const raw = {
         metadata: {
           name: 'test-deployment',
@@ -145,16 +170,25 @@ describe('DynamoProvider', () => {
           creationTimestamp: '2024-01-01T00:00:00Z',
         },
         spec: {
-          VllmWorker: {
-            'model-path': 'meta-llama/Llama-3.2-1B',
-            'served-model-name': 'llama',
-            replicas: 2,
+          backendFramework: 'vllm',
+          services: {
+            VllmWorker: {
+              componentType: 'worker',
+              dynamoNamespace: 'test-deployment',
+              replicas: 2,
+              extraPodSpec: {
+                mainContainer: {
+                  args: ['python3 -m dynamo.vllm --model meta-llama/Llama-3.2-1B --served-model-name llama'],
+                },
+              },
+            },
+            Frontend: { componentType: 'frontend', replicas: 1 },
           },
-          Frontend: { replicas: 1 },
         },
         status: {
-          phase: 'Running',
+          state: 'successful',
           replicas: { desired: 2, ready: 2, available: 2 },
+          conditions: [{ type: 'Ready', status: 'True' }],
         },
       };
 
@@ -175,7 +209,18 @@ describe('DynamoProvider', () => {
       const raw = {
         metadata: { name: 'sglang-deploy' },
         spec: {
-          SglangWorker: { 'model-path': 'test/model', replicas: 1 },
+          backendFramework: 'sglang',
+          services: {
+            SglangWorker: {
+              componentType: 'worker',
+              replicas: 1,
+              extraPodSpec: {
+                mainContainer: {
+                  args: ['python3 -m dynamo.sglang --model test/model'],
+                },
+              },
+            },
+          },
         },
         status: { phase: 'Pending' },
       };
@@ -185,16 +230,37 @@ describe('DynamoProvider', () => {
       expect(status.phase).toBe('Pending');
     });
 
-    test('parses disaggregated deployment', () => {
+    test('parses disaggregated deployment from spec.services', () => {
       const raw = {
         metadata: { name: 'pd-deploy' },
         spec: {
-          VllmPrefillWorker: { 'model-path': 'test/model', replicas: 2 },
-          VllmDecodeWorker: { 'model-path': 'test/model', replicas: 3 },
-          Frontend: { replicas: 1 },
+          backendFramework: 'vllm',
+          services: {
+            VllmPrefillWorker: {
+              componentType: 'worker',
+              subComponentType: 'prefill',
+              replicas: 2,
+              extraPodSpec: {
+                mainContainer: {
+                  args: ['python3 -m dynamo.vllm --model test/model --is-prefill-worker'],
+                },
+              },
+            },
+            VllmDecodeWorker: {
+              componentType: 'worker',
+              subComponentType: 'decode',
+              replicas: 3,
+              extraPodSpec: {
+                mainContainer: {
+                  args: ['python3 -m dynamo.vllm --model test/model'],
+                },
+              },
+            },
+            Frontend: { componentType: 'frontend', replicas: 1 },
+          },
         },
         status: {
-          phase: 'Running',
+          state: 'successful',
           prefillReplicas: { desired: 2, ready: 2 },
           decodeReplicas: { desired: 3, ready: 3 },
         },
@@ -211,13 +277,41 @@ describe('DynamoProvider', () => {
       const raw = {
         metadata: { name: 'pending' },
         spec: {
-          VllmWorker: { 'model-path': 'test/model' },
+          backendFramework: 'vllm',
+          services: {
+            VllmWorker: {
+              componentType: 'worker',
+              extraPodSpec: {
+                mainContainer: {
+                  args: ['python3 -m dynamo.vllm --model test/model'],
+                },
+              },
+            },
+          },
         },
       };
 
       const status = provider.parseStatus(raw);
       expect(status.phase).toBe('Pending');
       expect(status.replicas.ready).toBe(0);
+    });
+
+    test('supports legacy format for backward compatibility', () => {
+      const raw = {
+        metadata: { name: 'legacy-deploy', namespace: 'default' },
+        spec: {
+          VllmWorker: {
+            replicas: 1,
+          },
+          Frontend: { replicas: 1 },
+        },
+        status: { phase: 'Running' },
+      };
+
+      const status = provider.parseStatus(raw);
+      expect(status.name).toBe('legacy-deploy');
+      expect(status.engine).toBe('vllm');
+      expect(status.mode).toBe('aggregated');
     });
   });
 

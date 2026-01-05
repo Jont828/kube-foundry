@@ -82,8 +82,6 @@ export function DeploymentList({ deployments, isLoading }: DeploymentListProps) 
         description="Deploy your first model to start serving inference requests. Choose from our curated model library or search HuggingFace."
         actionLabel="Browse Models"
         onAction={() => navigate('/')}
-        secondaryActionLabel="Learn More"
-        onSecondaryAction={() => window.open('https://docs.kubefoundry.dev', '_blank')}
       />
     )
   }

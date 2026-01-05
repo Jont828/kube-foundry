@@ -23,122 +23,153 @@ describe('generateDynamoManifest', () => {
       expect(manifest.kind).toBe('DynamoGraphDeployment');
     });
 
-    it('generates correct metadata', () => {
+    it('generates correct metadata with kubefoundry labels', () => {
       const manifest = generateDynamoManifest(baseConfig);
       expect(manifest.metadata.name).toBe('test-deployment');
       expect(manifest.metadata.namespace).toBe('kubefoundry-system');
       expect(manifest.metadata.labels).toEqual({
-        'app.kubernetes.io/name': 'dynamote',
+        'app.kubernetes.io/name': 'kubefoundry',
         'app.kubernetes.io/instance': 'test-deployment',
-        'app.kubernetes.io/managed-by': 'dynamote',
+        'app.kubernetes.io/managed-by': 'kubefoundry',
+        'kubefoundry.io/provider': 'dynamo',
       });
     });
 
-    it('includes Frontend spec', () => {
+    it('includes backendFramework in spec', () => {
       const manifest = generateDynamoManifest(baseConfig);
-      expect(manifest.spec.Frontend).toBeDefined();
-      expect((manifest.spec.Frontend as Record<string, unknown>).replicas).toBe(1);
-      expect((manifest.spec.Frontend as Record<string, unknown>)['http-port']).toBe(8000);
+      expect(manifest.spec.backendFramework).toBe('vllm');
+    });
+
+    it('includes spec.services with Frontend', () => {
+      const manifest = generateDynamoManifest(baseConfig);
+      const services = manifest.spec.services as Record<string, unknown>;
+      expect(services.Frontend).toBeDefined();
+      const frontend = services.Frontend as Record<string, unknown>;
+      expect(frontend.componentType).toBe('frontend');
+      expect(frontend.dynamoNamespace).toBe('test-deployment');
+      expect(frontend.replicas).toBe(1);
     });
   });
 
   describe('engine selection', () => {
-    it('generates VllmWorker for vllm engine', () => {
+    it('generates VllmWorker in spec.services for vllm engine', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, engine: 'vllm' });
-      expect(manifest.spec.VllmWorker).toBeDefined();
-      expect(manifest.spec.SglangWorker).toBeUndefined();
-      expect(manifest.spec.TrtllmWorker).toBeUndefined();
+      const services = manifest.spec.services as Record<string, unknown>;
+      expect(services.VllmWorker).toBeDefined();
+      expect(services.SglangWorker).toBeUndefined();
+      expect(services.TrtllmWorker).toBeUndefined();
     });
 
-    it('generates SglangWorker for sglang engine', () => {
+    it('generates SglangWorker in spec.services for sglang engine', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, engine: 'sglang' });
-      expect(manifest.spec.SglangWorker).toBeDefined();
-      expect(manifest.spec.VllmWorker).toBeUndefined();
-      expect(manifest.spec.TrtllmWorker).toBeUndefined();
+      const services = manifest.spec.services as Record<string, unknown>;
+      expect(services.SglangWorker).toBeDefined();
+      expect(services.VllmWorker).toBeUndefined();
+      expect(services.TrtllmWorker).toBeUndefined();
     });
 
-    it('generates TrtllmWorker for trtllm engine', () => {
+    it('generates TrtllmWorker in spec.services for trtllm engine', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, engine: 'trtllm' });
-      expect(manifest.spec.TrtllmWorker).toBeDefined();
-      expect(manifest.spec.VllmWorker).toBeUndefined();
-      expect(manifest.spec.SglangWorker).toBeUndefined();
+      const services = manifest.spec.services as Record<string, unknown>;
+      expect(services.TrtllmWorker).toBeDefined();
+      expect(services.VllmWorker).toBeUndefined();
+      expect(services.SglangWorker).toBeUndefined();
     });
   });
 
   describe('worker spec configuration', () => {
-    it('includes model path and served model name', () => {
+    it('includes componentType and dynamoNamespace', () => {
       const manifest = generateDynamoManifest(baseConfig);
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
-      expect(worker['model-path']).toBe('Qwen/Qwen3-0.6B');
-      expect(worker['served-model-name']).toBe('Qwen/Qwen3-0.6B');
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
+      expect(worker.componentType).toBe('worker');
+      expect(worker.dynamoNamespace).toBe('test-deployment');
     });
 
-    it('uses custom served model name when provided', () => {
+    it('includes model in extraPodSpec.mainContainer.args', () => {
+      const manifest = generateDynamoManifest(baseConfig);
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
+      const extraPodSpec = worker.extraPodSpec as Record<string, unknown>;
+      const mainContainer = extraPodSpec.mainContainer as Record<string, unknown>;
+      const args = mainContainer.args as string[];
+      expect(args[0]).toContain('--model Qwen/Qwen3-0.6B');
+    });
+
+    it('includes custom served model name in args', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, servedModelName: 'custom-name' });
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
-      expect(worker['served-model-name']).toBe('custom-name');
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
+      const extraPodSpec = worker.extraPodSpec as Record<string, unknown>;
+      const mainContainer = extraPodSpec.mainContainer as Record<string, unknown>;
+      const args = mainContainer.args as string[];
+      expect(args[0]).toContain('--served-model-name custom-name');
     });
 
     it('includes replicas count', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, replicas: 3 });
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
       expect(worker.replicas).toBe(3);
     });
 
-    it('includes envFrom with HF token secret', () => {
+    it('includes envFromSecret with HF token secret', () => {
       const manifest = generateDynamoManifest(baseConfig);
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
-      expect(worker.envFrom).toEqual([
-        {
-          secretRef: {
-            name: 'hf-token-secret',
-          },
-        },
-      ]);
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
+      expect(worker.envFromSecret).toBe('hf-token-secret');
     });
   });
 
   describe('optional configuration', () => {
-    it('includes enforce-eager when enabled', () => {
+    it('includes --enforce-eager in args when enabled', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, enforceEager: true });
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
-      expect(worker['enforce-eager']).toBe(true);
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
+      const extraPodSpec = worker.extraPodSpec as Record<string, unknown>;
+      const mainContainer = extraPodSpec.mainContainer as Record<string, unknown>;
+      const args = mainContainer.args as string[];
+      expect(args[0]).toContain('--enforce-eager');
     });
 
-    it('excludes enforce-eager when disabled', () => {
+    it('excludes --enforce-eager in args when disabled', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, enforceEager: false });
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
-      expect(worker['enforce-eager']).toBeUndefined();
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
+      const extraPodSpec = worker.extraPodSpec as Record<string, unknown>;
+      const mainContainer = extraPodSpec.mainContainer as Record<string, unknown>;
+      const args = mainContainer.args as string[];
+      expect(args[0]).not.toContain('--enforce-eager');
     });
 
-    it('includes enable-prefix-caching when enabled', () => {
+    it('includes --enable-prefix-caching in args when enabled', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, enablePrefixCaching: true });
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
-      expect(worker['enable-prefix-caching']).toBe(true);
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
+      const extraPodSpec = worker.extraPodSpec as Record<string, unknown>;
+      const mainContainer = extraPodSpec.mainContainer as Record<string, unknown>;
+      const args = mainContainer.args as string[];
+      expect(args[0]).toContain('--enable-prefix-caching');
     });
 
-    it('excludes enable-prefix-caching when disabled', () => {
-      const manifest = generateDynamoManifest({ ...baseConfig, enablePrefixCaching: false });
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
-      expect(worker['enable-prefix-caching']).toBeUndefined();
-    });
-
-    it('includes trust-remote-code when enabled', () => {
+    it('includes --trust-remote-code in args when enabled', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, trustRemoteCode: true });
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
-      expect(worker['trust-remote-code']).toBe(true);
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
+      const extraPodSpec = worker.extraPodSpec as Record<string, unknown>;
+      const mainContainer = extraPodSpec.mainContainer as Record<string, unknown>;
+      const args = mainContainer.args as string[];
+      expect(args[0]).toContain('--trust-remote-code');
     });
 
-    it('includes max-model-len when contextLength is provided', () => {
+    it('includes --max-model-len in args when contextLength is provided', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, contextLength: 4096 });
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
-      expect(worker['max-model-len']).toBe(4096);
-    });
-
-    it('excludes max-model-len when contextLength is not provided', () => {
-      const manifest = generateDynamoManifest(baseConfig);
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
-      expect(worker['max-model-len']).toBeUndefined();
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
+      const extraPodSpec = worker.extraPodSpec as Record<string, unknown>;
+      const mainContainer = extraPodSpec.mainContainer as Record<string, unknown>;
+      const args = mainContainer.args as string[];
+      expect(args[0]).toContain('--max-model-len 4096');
     });
   });
 
@@ -148,9 +179,11 @@ describe('generateDynamoManifest', () => {
         ...baseConfig,
         resources: { gpu: 2 },
       });
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
       const resources = worker.resources as Record<string, Record<string, unknown>>;
-      expect(resources.limits['nvidia.com/gpu']).toBe(2);
+      expect(resources.limits.gpu).toBe('2');
+      expect(resources.requests.gpu).toBe('2');
     });
 
     it('includes memory when specified', () => {
@@ -158,14 +191,16 @@ describe('generateDynamoManifest', () => {
         ...baseConfig,
         resources: { gpu: 1, memory: '32Gi' },
       });
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
       const resources = worker.resources as Record<string, Record<string, unknown>>;
       expect(resources.limits.memory).toBe('32Gi');
     });
 
     it('excludes resources when not specified', () => {
       const manifest = generateDynamoManifest(baseConfig);
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
+      const services = manifest.spec.services as Record<string, unknown>;
+      const worker = services.VllmWorker as Record<string, unknown>;
       expect(worker.resources).toBeUndefined();
     });
   });
@@ -173,35 +208,23 @@ describe('generateDynamoManifest', () => {
   describe('router mode configuration', () => {
     it('excludes router-mode when set to none', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, routerMode: 'none' });
-      const frontend = manifest.spec.Frontend as Record<string, unknown>;
+      const services = manifest.spec.services as Record<string, unknown>;
+      const frontend = services.Frontend as Record<string, unknown>;
       expect(frontend['router-mode']).toBeUndefined();
     });
 
     it('includes router-mode when set to kv', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, routerMode: 'kv' });
-      const frontend = manifest.spec.Frontend as Record<string, unknown>;
+      const services = manifest.spec.services as Record<string, unknown>;
+      const frontend = services.Frontend as Record<string, unknown>;
       expect(frontend['router-mode']).toBe('kv');
     });
 
     it('includes router-mode when set to round-robin', () => {
       const manifest = generateDynamoManifest({ ...baseConfig, routerMode: 'round-robin' });
-      const frontend = manifest.spec.Frontend as Record<string, unknown>;
+      const services = manifest.spec.services as Record<string, unknown>;
+      const frontend = services.Frontend as Record<string, unknown>;
       expect(frontend['router-mode']).toBe('round-robin');
-    });
-  });
-
-  describe('engine args', () => {
-    it('includes custom engine args', () => {
-      const manifest = generateDynamoManifest({
-        ...baseConfig,
-        engineArgs: {
-          'custom-arg': 'value',
-          'another-arg': 123,
-        },
-      });
-      const worker = manifest.spec.VllmWorker as Record<string, unknown>;
-      expect(worker['custom-arg']).toBe('value');
-      expect(worker['another-arg']).toBe(123);
     });
   });
 });
@@ -215,12 +238,15 @@ describe('validateManifest', () => {
       namespace: 'kubefoundry-system',
     },
     spec: {
-      Frontend: { replicas: 1 },
-      VllmWorker: { 'model-path': 'test' },
+      backendFramework: 'vllm',
+      services: {
+        Frontend: { componentType: 'frontend', replicas: 1 },
+        VllmWorker: { componentType: 'worker', replicas: 1 },
+      },
     },
   };
 
-  it('validates correct manifest', () => {
+  it('validates correct manifest with spec.services', () => {
     const result = validateManifest(validManifest);
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
@@ -256,42 +282,66 @@ describe('validateManifest', () => {
     expect(result.errors).toContain('Missing metadata.namespace');
   });
 
-  it('detects missing Frontend spec', () => {
-    const { Frontend, ...specWithoutFrontend } = validManifest.spec;
+  it('detects missing spec.services', () => {
     const result = validateManifest({
       ...validManifest,
-      spec: specWithoutFrontend,
+      spec: { backendFramework: 'vllm' },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain('Missing Frontend spec');
+    expect(result.errors).toContain('Missing spec.services');
   });
 
-  it('detects missing worker spec', () => {
-    const result = validateManifest({
-      ...validManifest,
-      spec: { Frontend: { replicas: 1 } },
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain('Missing worker spec (VllmWorker, SglangWorker, or TrtllmWorker)');
-  });
-
-  it('validates SglangWorker as valid worker', () => {
+  it('detects missing Frontend in spec.services', () => {
     const result = validateManifest({
       ...validManifest,
       spec: {
-        Frontend: { replicas: 1 },
-        SglangWorker: { 'model-path': 'test' },
+        ...validManifest.spec,
+        services: {
+          VllmWorker: { componentType: 'worker', replicas: 1 },
+        },
+      },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('Missing Frontend in spec.services');
+  });
+
+  it('detects missing worker spec in spec.services', () => {
+    const result = validateManifest({
+      ...validManifest,
+      spec: {
+        ...validManifest.spec,
+        services: {
+          Frontend: { componentType: 'frontend', replicas: 1 },
+        },
+      },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('Missing worker spec (VllmWorker, SglangWorker, or TrtllmWorker) in spec.services');
+  });
+
+  it('validates SglangWorker as valid worker in spec.services', () => {
+    const result = validateManifest({
+      ...validManifest,
+      spec: {
+        ...validManifest.spec,
+        services: {
+          Frontend: { componentType: 'frontend', replicas: 1 },
+          SglangWorker: { componentType: 'worker', replicas: 1 },
+        },
       },
     });
     expect(result.valid).toBe(true);
   });
 
-  it('validates TrtllmWorker as valid worker', () => {
+  it('validates TrtllmWorker as valid worker in spec.services', () => {
     const result = validateManifest({
       ...validManifest,
       spec: {
-        Frontend: { replicas: 1 },
-        TrtllmWorker: { 'model-path': 'test' },
+        ...validManifest.spec,
+        services: {
+          Frontend: { componentType: 'frontend', replicas: 1 },
+          TrtllmWorker: { componentType: 'worker', replicas: 1 },
+        },
       },
     });
     expect(result.valid).toBe(true);

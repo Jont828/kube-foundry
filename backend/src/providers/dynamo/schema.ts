@@ -17,6 +17,7 @@ export type DynamoDeploymentConfig = z.infer<typeof dynamoDeploymentConfigSchema
 
 /**
  * Dynamo manifest schema for validation
+ * Uses the correct DynamoGraphDeployment spec.services format
  */
 export const dynamoManifestSchema = z.object({
   apiVersion: z.literal('nvidia.com/v1alpha1'),
@@ -27,12 +28,17 @@ export const dynamoManifestSchema = z.object({
     labels: z.record(z.string()).optional(),
   }),
   spec: z.object({
-    Frontend: z.object({
-      replicas: z.number().optional(),
-      'http-port': z.number().optional(),
-      'router-mode': z.enum(['kv', 'round-robin']).optional(),
-    }),
-  }).passthrough(), // Allow VllmWorker, SglangWorker, TrtllmWorker
+    backendFramework: z.enum(['vllm', 'sglang', 'trtllm']).optional(),
+    services: z.object({
+      Frontend: z.object({
+        componentType: z.literal('frontend').optional(),
+        dynamoNamespace: z.string().optional(),
+        replicas: z.number().optional(),
+        'router-mode': z.enum(['kv', 'round-robin']).optional(),
+        envFromSecret: z.string().optional(),
+      }),
+    }).passthrough(), // Allow VllmWorker, SglangWorker, TrtllmWorker, etc.
+  }),
 });
 
 export type DynamoManifest = z.infer<typeof dynamoManifestSchema>;

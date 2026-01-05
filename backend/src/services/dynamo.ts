@@ -34,6 +34,12 @@ export function generateDynamoManifest(config: DeploymentConfig): DynamoManifest
   const workerSpec = generateWorkerSpec(config);
   const frontendSpec = generateFrontendSpec(config);
 
+  // Build services map with Frontend and appropriate worker
+  const services: Record<string, unknown> = {
+    Frontend: frontendSpec,
+    ...workerSpec,
+  };
+
   const manifest: DynamoManifest = {
     apiVersion: 'nvidia.com/v1alpha1',
     kind: 'DynamoGraphDeployment',
@@ -41,14 +47,15 @@ export function generateDynamoManifest(config: DeploymentConfig): DynamoManifest
       name: config.name,
       namespace: config.namespace,
       labels: {
-        'app.kubernetes.io/name': 'dynamote',
+        'app.kubernetes.io/name': 'kubefoundry',
         'app.kubernetes.io/instance': config.name,
-        'app.kubernetes.io/managed-by': 'dynamote',
+        'app.kubernetes.io/managed-by': 'kubefoundry',
+        'kubefoundry.io/provider': 'dynamo',
       },
     },
     spec: {
-      Frontend: frontendSpec,
-      ...workerSpec,
+      backendFramework: config.engine,
+      services,
     },
   };
 
@@ -57,12 +64,18 @@ export function generateDynamoManifest(config: DeploymentConfig): DynamoManifest
 
 function generateFrontendSpec(config: DeploymentConfig): Record<string, unknown> {
   const spec: Record<string, unknown> = {
+    componentType: 'frontend',
+    dynamoNamespace: config.name,
     replicas: 1,
-    'http-port': 8000,
   };
 
   if (config.routerMode !== 'none') {
     spec['router-mode'] = config.routerMode;
+  }
+
+  // Add HF token secret for frontend as well
+  if (config.hfTokenSecret) {
+    spec.envFromSecret = config.hfTokenSecret;
   }
 
   return spec;
@@ -70,51 +83,73 @@ function generateFrontendSpec(config: DeploymentConfig): Record<string, unknown>
 
 function generateWorkerSpec(config: DeploymentConfig): Record<string, unknown> {
   const baseSpec: Record<string, unknown> = {
-    'model-path': config.modelId,
-    'served-model-name': config.servedModelName || config.modelId,
+    componentType: 'worker',
+    dynamoNamespace: config.name,
     replicas: config.replicas,
-    envFrom: [
-      {
-        secretRef: {
-          name: config.hfTokenSecret,
-        },
-      },
-    ],
   };
 
-  // Add common options
-  if (config.enforceEager) {
-    baseSpec['enforce-eager'] = true;
+  // Add HF token secret
+  if (config.hfTokenSecret) {
+    baseSpec.envFromSecret = config.hfTokenSecret;
   }
 
-  if (config.enablePrefixCaching) {
-    baseSpec['enable-prefix-caching'] = true;
-  }
-
-  if (config.trustRemoteCode) {
-    baseSpec['trust-remote-code'] = true;
-  }
-
-  if (config.contextLength) {
-    baseSpec['max-model-len'] = config.contextLength;
-  }
-
-  // Add resource requirements
+  // Add resource requirements in the correct format
   if (config.resources) {
     baseSpec.resources = {
       limits: {
-        'nvidia.com/gpu': config.resources.gpu,
+        gpu: String(config.resources.gpu),
+        ...(config.resources.memory && { memory: config.resources.memory }),
+      },
+      requests: {
+        gpu: String(config.resources.gpu),
         ...(config.resources.memory && { memory: config.resources.memory }),
       },
     };
   }
 
+  // Build args for the inference engine
+  const args: string[] = [];
+  args.push(`python3 -m dynamo.${config.engine}`);
+  args.push(`--model ${config.modelId}`);
+  
+  if (config.servedModelName) {
+    args.push(`--served-model-name ${config.servedModelName}`);
+  }
+
+  if (config.enforceEager) {
+    args.push('--enforce-eager');
+  }
+
+  if (config.enablePrefixCaching) {
+    args.push('--enable-prefix-caching');
+  }
+
+  if (config.trustRemoteCode) {
+    args.push('--trust-remote-code');
+  }
+
+  if (config.contextLength) {
+    args.push(`--max-model-len ${config.contextLength}`);
+  }
+
   // Add engine-specific arguments
   if (config.engineArgs) {
     Object.entries(config.engineArgs).forEach(([key, value]) => {
-      baseSpec[key] = value;
+      if (typeof value === 'boolean' && value) {
+        args.push(`--${key}`);
+      } else if (typeof value !== 'boolean') {
+        args.push(`--${key} ${value}`);
+      }
     });
   }
+
+  baseSpec.extraPodSpec = {
+    mainContainer: {
+      workingDir: '/workspace/examples/backends/' + config.engine,
+      command: ['/bin/sh', '-c'],
+      args: [args.join(' ')],
+    },
+  };
 
   // Return with appropriate worker key based on engine
   switch (config.engine) {
@@ -153,13 +188,19 @@ export function validateManifest(manifest: DynamoManifest): { valid: boolean; er
     errors.push('Missing spec');
   }
 
-  if (!manifest.spec?.Frontend) {
-    errors.push('Missing Frontend spec');
-  }
+  // Check for services map
+  const services = manifest.spec?.services as Record<string, unknown> | undefined;
+  if (!services) {
+    errors.push('Missing spec.services');
+  } else {
+    if (!services.Frontend) {
+      errors.push('Missing Frontend in spec.services');
+    }
 
-  const hasWorker = manifest.spec?.VllmWorker || manifest.spec?.SglangWorker || manifest.spec?.TrtllmWorker;
-  if (!hasWorker) {
-    errors.push('Missing worker spec (VllmWorker, SglangWorker, or TrtllmWorker)');
+    const hasWorker = services.VllmWorker || services.SglangWorker || services.TrtllmWorker;
+    if (!hasWorker) {
+      errors.push('Missing worker spec (VllmWorker, SglangWorker, or TrtllmWorker) in spec.services');
+    }
   }
 
   return {

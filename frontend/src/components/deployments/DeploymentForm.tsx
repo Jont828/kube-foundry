@@ -505,49 +505,64 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <RadioGroup
-              value={selectedRuntime}
-              onValueChange={(value) => handleRuntimeChange(value as RuntimeId)}
-              className="grid gap-4 sm:grid-cols-2"
-            >
+            <div className="grid gap-4 sm:grid-cols-2">
               {runtimes.map((runtime) => {
                 const info = RUNTIME_INFO[runtime.id as RuntimeId]
                 if (!info) return null
                 
                 const isCompatible = isRuntimeCompatible(runtime.id as RuntimeId, model.supportedEngines)
+                const isSelected = selectedRuntime === runtime.id
                 
                 return (
-                  <label
+                  <div
                     key={runtime.id}
-                    htmlFor={`runtime-${runtime.id}`}
+                    role="radio"
+                    aria-checked={isSelected}
+                    tabIndex={isCompatible ? 0 : -1}
+                    onClick={() => {
+                      if (isCompatible) {
+                        handleRuntimeChange(runtime.id as RuntimeId)
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (isCompatible && (e.key === 'Enter' || e.key === ' ')) {
+                        e.preventDefault()
+                        handleRuntimeChange(runtime.id as RuntimeId)
+                      }
+                    }}
                     className={cn(
                       "relative flex items-start space-x-3 rounded-lg border p-4 transition-colors",
                       !isCompatible && "opacity-50 cursor-not-allowed",
                       isCompatible && "cursor-pointer",
-                      isCompatible && selectedRuntime === runtime.id
+                      isCompatible && isSelected
                         ? "border-primary bg-primary/5"
                         : "border-border",
-                      isCompatible && selectedRuntime !== runtime.id && "hover:border-muted-foreground/50",
+                      isCompatible && !isSelected && "hover:border-muted-foreground/50",
                       isCompatible && !runtime.installed && "opacity-75"
                     )}
                   >
-                    <RadioGroupItem 
-                      value={runtime.id} 
-                      id={`runtime-${runtime.id}`} 
-                      className="mt-1" 
-                      disabled={!isCompatible}
-                    />
+                    {/* Custom radio indicator */}
+                    <div 
+                      className={cn(
+                        "mt-1 h-4 w-4 rounded-full border flex items-center justify-center shrink-0",
+                        isSelected ? "border-primary" : "border-muted-foreground/50",
+                        !isCompatible && "opacity-50"
+                      )}
+                    >
+                      {isSelected && (
+                        <div className="h-2.5 w-2.5 rounded-full bg-primary" />
+                      )}
+                    </div>
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center gap-2">
-                        <Label 
-                          htmlFor={`runtime-${runtime.id}`} 
+                        <span 
                           className={cn(
-                            "font-medium",
+                            "font-medium text-sm",
                             isCompatible ? "cursor-pointer" : "cursor-not-allowed"
                           )}
                         >
                           {info.name}
-                        </Label>
+                        </span>
                         {!isCompatible ? (
                           <Badge variant="outline" className="text-muted-foreground border-muted text-xs">
                             Not Compatible
@@ -572,7 +587,7 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
                           This model requires {model.supportedEngines.includes('llamacpp') ? 'llama.cpp' : model.supportedEngines.join('/')} which is not supported by this runtime.
                         </p>
                       )}
-                      {isCompatible && !runtime.installed && selectedRuntime === runtime.id && (
+                      {isCompatible && !runtime.installed && isSelected && (
                         <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
                           <Link to="/installation" className="underline hover:no-underline">
                             Install {info.name}
@@ -581,10 +596,10 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
                         </p>
                       )}
                     </div>
-                  </label>
+                  </div>
                 )
               })}
-            </RadioGroup>
+            </div>
           </CardContent>
         </Card>
       )}
