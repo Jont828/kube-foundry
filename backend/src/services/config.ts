@@ -1,6 +1,7 @@
 import * as k8s from '@kubernetes/client-node';
 import { providerRegistry } from '../providers';
 import logger from '../lib/logger';
+import type { CostEstimationConfig } from '@kubefoundry/shared';
 
 /**
  * Application configuration stored in Kubernetes ConfigMap
@@ -9,6 +10,8 @@ export interface AppConfig {
   /** @deprecated No longer used - each deployment specifies its own provider */
   activeProviderId?: string;
   defaultNamespace?: string;
+  /** Cost estimation settings for deployment planning */
+  costEstimation?: CostEstimationConfig;
 }
 
 const CONFIG_NAMESPACE = 'kubefoundry-system';

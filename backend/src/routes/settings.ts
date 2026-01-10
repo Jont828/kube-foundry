@@ -7,8 +7,15 @@ import { authService } from '../services/auth';
 import { providerRegistry, listProviderInfo } from '../providers';
 import logger from '../lib/logger';
 
+const costEstimationSchema = z.object({
+  cloudProvider: z.enum(['aws', 'azure', 'gcp', 'on-prem', 'none']),
+  gpuType: z.string().min(1),
+  customHourlyRate: z.number().min(0).optional(),
+});
+
 const updateSettingsSchema = z.object({
   defaultNamespace: z.string().optional(),
+  costEstimation: costEstimationSchema.optional(),
 });
 
 const providerIdParamsSchema = z.object({

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSettings } from '@/hooks/useSettings'
+import { useSettings, useUpdateSettings } from '@/hooks/useSettings'
 import { useRuntimesStatus } from '@/hooks/useRuntimes'
 import { useClusterStatus } from '@/hooks/useClusterStatus'
 import {
@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -43,16 +44,19 @@ import {
   Copy,
   Zap,
   Trash2,
+  DollarSign,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSearchParams } from 'react-router-dom'
+import type { CloudProvider } from '@/lib/api'
 
 type SettingsTab = 'general' | 'runtimes' | 'integrations'
 type RuntimeId = 'dynamo' | 'kuberay' | 'kaito'
 
 export function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { isLoading: settingsLoading } = useSettings()
+  const { data: settings, isLoading: settingsLoading } = useSettings()
+  const updateSettings = useUpdateSettings()
   const { data: runtimesStatus, isLoading: runtimesLoading } = useRuntimesStatus()
   const { data: clusterStatus, isLoading: clusterLoading } = useClusterStatus()
   const { data: helmStatus, isLoading: helmLoading } = useHelmStatus()
@@ -66,6 +70,10 @@ export function SettingsPage() {
 
   const [isInstallingGpu, setIsInstallingGpu] = useState(false)
   const [isConnectingHf, setIsConnectingHf] = useState(false)
+  
+  // Cost estimation settings state
+  const [costCloudProvider, setCostCloudProvider] = useState<CloudProvider>('none')
+  const [isSavingCostSettings, setIsSavingCostSettings] = useState(false)
   
   // Tab state from URL params or default
   const tabFromUrl = searchParams.get('tab') as SettingsTab | null
@@ -93,6 +101,14 @@ export function SettingsPage() {
     }
   }, [runtimesStatus, selectedRuntime, runtimes])
 
+  // Initialize cost settings from saved settings
+  useEffect(() => {
+    if (settings?.config?.costEstimation) {
+      const ce = settings.config.costEstimation
+      setCostCloudProvider(ce.cloudProvider as CloudProvider)
+    }
+  }, [settings])
+
   // Update URL when tab changes
   useEffect(() => {
     if (activeTab !== 'general') {
@@ -101,6 +117,31 @@ export function SettingsPage() {
       setSearchParams({})
     }
   }, [activeTab, setSearchParams])
+
+  // Save cost estimation settings
+  const handleSaveCostSettings = async () => {
+    setIsSavingCostSettings(true)
+    try {
+      await updateSettings.mutateAsync({
+        costEstimation: {
+          cloudProvider: costCloudProvider,
+        },
+      })
+      toast({
+        title: 'Settings Saved',
+        description: 'Cost estimation settings have been updated.',
+        variant: 'success',
+      })
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to save cost estimation settings.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSavingCostSettings(false)
+    }
+  }
 
   const effectiveRuntime = selectedRuntime || 'dynamo'
 
@@ -261,6 +302,91 @@ export function SettingsPage() {
                   {installedCount} of {runtimes.length}
                 </Badge>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Cost Estimation Settings */}
+          <Card variant="elevated">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5" />
+                Cost Estimation
+              </CardTitle>
+              <CardDescription>
+                Configure your cloud provider to see estimated deployment costs
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Cloud Provider */}
+              <div className="space-y-2">
+                <Label htmlFor="cloudProvider">Cloud Provider</Label>
+                <Select
+                  value={costCloudProvider}
+                  onValueChange={(value) => setCostCloudProvider(value as CloudProvider)}
+                >
+                  <SelectTrigger id="cloudProvider">
+                    <SelectValue placeholder="Select cloud provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="aws">Amazon Web Services (AWS)</SelectItem>
+                    <SelectItem value="azure">Microsoft Azure</SelectItem>
+                    <SelectItem value="gcp">Google Cloud Platform (GCP)</SelectItem>
+                    <SelectItem value="none">Not Configured</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* GPU Pricing Table */}
+              {costCloudProvider !== 'none' && (
+                <div className="space-y-2">
+                  <Label>GPU Pricing ($/hour per GPU)</Label>
+                  <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                    <div className="p-2 rounded-md bg-muted">
+                      <div className="font-medium">A10</div>
+                      <div className="text-muted-foreground">
+                        ${costCloudProvider === 'aws' ? '1.21' : costCloudProvider === 'azure' ? '1.10' : '1.00'}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-md bg-muted">
+                      <div className="font-medium">A100</div>
+                      <div className="text-muted-foreground">
+                        ${costCloudProvider === 'aws' ? '4.10' : costCloudProvider === 'azure' ? '3.67' : '3.67'}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-md bg-muted">
+                      <div className="font-medium">H100</div>
+                      <div className="text-muted-foreground">
+                        ${costCloudProvider === 'aws' ? '5.10' : costCloudProvider === 'azure' ? '5.00' : '5.07'}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    On-demand GPU pricing as of late 2025. Actual costs may vary.
+                  </p>
+                </div>
+              )}
+
+              {/* Save Button */}
+              <Button
+                onClick={handleSaveCostSettings}
+                disabled={isSavingCostSettings}
+                className="w-full"
+              >
+                {isSavingCostSettings ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Cost Settings'
+                )}
+              </Button>
+
+              {costCloudProvider === 'none' && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Select a cloud provider to enable cost estimation on the deployment page
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -592,7 +718,7 @@ export function SettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {installationStatus.installationSteps.map((step, index) => (
+                {installationStatus.installationSteps.map((step: { title: string; description: string; command?: string }, index: number) => (
                   <div key={index} className="space-y-2">
                     <div className="flex items-center gap-2">
                       <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">

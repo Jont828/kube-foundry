@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,13 +13,16 @@ import { useCreateDeployment, type DeploymentConfig } from '@/hooks/useDeploymen
 import { useHuggingFaceStatus, useGgufFiles } from '@/hooks/useHuggingFace'
 import { usePremadeModels } from '@/hooks/useAikit'
 import { useClusterNodes } from '@/hooks/useClusterStatus'
+import { useSettings } from '@/hooks/useSettings'
 import { useToast } from '@/hooks/useToast'
 import { generateDeploymentName, cn } from '@/lib/utils'
-import { type Model, type DetailedClusterCapacity, type AutoscalerDetectionResult, type RuntimeStatus, type PremadeModel, type AIConfiguratorResult, aikitApi, type Engine } from '@/lib/api'
+import { type Model, type DetailedClusterCapacity, type AutoscalerDetectionResult, type RuntimeStatus, type PremadeModel, type AIConfiguratorResult, aikitApi, type Engine, type CostSettings, type GpuType, type CloudProvider } from '@/lib/api'
 import { ChevronDown, AlertCircle, Rocket, CheckCircle2, Sparkles, AlertTriangle, Server, Cpu, Box, Loader2 } from 'lucide-react'
 import { CapacityWarning } from './CapacityWarning'
 import { AIConfiguratorPanel } from './AIConfiguratorPanel'
+import { CostEstimatePanel } from './CostEstimatePanel'
 import { calculateGpuRecommendation, type GpuRecommendation } from '@/lib/gpu-recommendations'
+import { calculateLocalCostEstimate } from '@/hooks/useCosts'
 
 // Reusable GPU per Replica field component
 interface GpuPerReplicaFieldProps {
@@ -129,6 +132,7 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
   const createDeployment = useCreateDeployment()
   const { data: hfStatus } = useHuggingFaceStatus()
   const { data: premadeModels } = usePremadeModels()
+  const { data: settings } = useSettings()
   const formRef = useRef<HTMLFormElement>(null)
   const { trigger: triggerConfetti, ConfettiComponent } = useConfetti(2500)
 
@@ -564,6 +568,47 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
   const maxGpusPerPod = config.mode === 'disaggregated'
     ? Math.max(config.prefillGpus || 1, config.decodeGpus || 1)
     : (config.resources?.gpu || gpuRecommendation.recommendedGpus || 1);
+
+  // Calculate cost estimate based on current configuration
+  const costEstimate = useMemo(() => {
+    const gpusPerReplica = config.resources?.gpu || gpuRecommendation.recommendedGpus || 1
+    
+    // Get base estimate without actual costs
+    const baseEstimate = calculateLocalCostEstimate(
+      config.mode,
+      config.replicas,
+      gpusPerReplica,
+      config.prefillReplicas,
+      config.decodeReplicas,
+      config.prefillGpus,
+      config.decodeGpus
+    )
+
+    // If settings have cost estimation configured, add actual cost data
+    const costConfig = settings?.config?.costEstimation
+    if (costConfig && costConfig.cloudProvider !== 'none') {
+      // We'll use the backend for full pricing, but for now show relative estimate
+      // The actual costs will be fetched from backend when needed
+      return {
+        ...baseEstimate,
+        hasActualCosts: false, // Will be true once backend responds
+        cloudProvider: costConfig.cloudProvider as 'aws' | 'azure' | 'gcp' | 'on-prem' | 'none',
+        gpuType: costConfig.gpuType as GpuType,
+      }
+    }
+
+    return baseEstimate
+  }, [
+    config.mode,
+    config.replicas,
+    config.resources?.gpu,
+    config.prefillReplicas,
+    config.decodeReplicas,
+    config.prefillGpus,
+    config.decodeGpus,
+    gpuRecommendation.recommendedGpus,
+    settings?.config?.costEstimation,
+  ])
 
   // Check if KAITO configuration is valid
   // For HuggingFace GGUF models, we need a ggufFile for both direct and build modes
@@ -1419,6 +1464,21 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
             replicas={config.replicas}
             gpusPerReplica={config.resources?.gpu || gpuRecommendation.recommendedGpus || 1}
           />
+        )}
+
+        {/* Cost Estimate - show for GPU deployments */}
+        {(selectedRuntime !== 'kaito' || kaitoComputeType === 'gpu' || isVllmModel) ? (
+          <CostEstimatePanel
+            estimate={costEstimate}
+            mode={config.mode}
+            cloudProvider={(settings?.config?.costEstimation?.cloudProvider as CloudProvider) || 'none'}
+          />
+        ) : selectedRuntime === 'kaito' && kaitoComputeType === 'cpu' && (
+          /* KAITO CPU mode - no GPU costs */
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 text-sm text-muted-foreground">
+            <Cpu className="h-4 w-4" />
+            <span>CPU inference mode - no GPU costs apply</span>
+          </div>
         )}
 
       {/* Submit Button */}

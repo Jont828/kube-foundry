@@ -53,6 +53,7 @@ export type {
   Settings,
   RuntimeStatus,
   RuntimesStatusResponse,
+  CostEstimationConfig,
 } from '@kubefoundry/shared';
 
 // Installation types
@@ -76,6 +77,19 @@ export type {
   HfModelSearchResult,
   HfModelSearchResponse,
   HfSearchParams,
+} from '@kubefoundry/shared';
+
+// Cost estimation types
+export type {
+  CloudProvider,
+  GpuType,
+  GpuPricing,
+  CloudProviderPricing,
+  CostEstimateInput,
+  ResourceBreakdown,
+  CostEstimate,
+  CostComparison,
+  CostSettings,
 } from '@kubefoundry/shared';
 
 // API response types
@@ -289,9 +303,11 @@ export const healthApi = {
 // Settings API
 // ============================================================================
 
+import type { CostEstimationConfig } from '@kubefoundry/shared';
+
 export const settingsApi = {
   get: () => request<Settings>('/settings'),
-  update: (settings: { defaultNamespace?: string }) =>
+  update: (settings: { defaultNamespace?: string; costEstimation?: CostEstimationConfig }) =>
     request<{ message: string; config: Settings['config'] }>('/settings', {
       method: 'PUT',
       body: JSON.stringify(settings),
@@ -606,4 +622,59 @@ export const aiConfiguratorApi = {
       method: 'POST',
       body: JSON.stringify({ gpuProduct }),
     }),
+};
+
+// ============================================================================
+// Cost Estimation API
+// ============================================================================
+
+import type {
+  CostEstimate,
+  CostEstimateInput,
+  CostSettings,
+  CloudProvider,
+  GpuType,
+} from '@kubefoundry/shared';
+
+export interface CloudProviderInfo {
+  id: CloudProvider;
+  name: string;
+  pricingSummary: { min: number; max: number; common: number };
+  hasPricing: boolean;
+}
+
+export interface GpuTypeInfo {
+  id: GpuType;
+  name: string;
+  memoryGb: number;
+}
+
+export const costsApi = {
+  /** Calculate cost estimate for a deployment configuration */
+  estimate: (input: CostEstimateInput, settings?: CostSettings) =>
+    request<CostEstimate>('/costs/estimate', {
+      method: 'POST',
+      body: JSON.stringify({ ...input, settings }),
+    }),
+
+  /** Compare costs between aggregated and disaggregated configurations */
+  compare: (
+    aggregated: Omit<CostEstimateInput, 'mode'>,
+    disaggregated: Omit<CostEstimateInput, 'mode'>,
+    settings?: CostSettings
+  ) =>
+    request<{ aggregated: CostEstimate; disaggregated: CostEstimate; savingsDescription: string }>(
+      '/costs/compare',
+      {
+        method: 'POST',
+        body: JSON.stringify({ aggregated, disaggregated, settings }),
+      }
+    ),
+
+  /** Get list of supported cloud providers */
+  getProviders: () =>
+    request<{ providers: CloudProviderInfo[]; lastUpdated: string }>('/costs/providers'),
+
+  /** Get list of supported GPU types */
+  getGpuTypes: () => request<{ gpuTypes: GpuTypeInfo[] }>('/costs/gpu-types'),
 };

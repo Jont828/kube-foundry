@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { settingsApi, type Settings, type ProviderInfo } from '@/lib/api'
+import { settingsApi, type Settings, type ProviderInfo, type CostEstimationConfig } from '@/lib/api'
 
 export function useSettings() {
   return useQuery<Settings>({
@@ -9,14 +9,14 @@ export function useSettings() {
 }
 
 /**
- * Update settings (currently only defaultNamespace).
+ * Update settings (defaultNamespace and costEstimation).
  * Active provider is no longer a global setting - each deployment specifies its runtime.
  */
 export function useUpdateSettings() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (settings: { defaultNamespace?: string }) =>
+    mutationFn: (settings: { defaultNamespace?: string; costEstimation?: CostEstimationConfig }) =>
       settingsApi.update(settings),
     onSuccess: () => {
       // Invalidate settings and cluster status queries

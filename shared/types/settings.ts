@@ -42,10 +42,21 @@ export interface ProviderDetails extends ProviderInfo {
   helmCharts: HelmChart[];
 }
 
+/**
+ * Cost estimation settings
+ */
+export interface CostEstimationConfig {
+  cloudProvider: 'aws' | 'azure' | 'gcp' | 'on-prem' | 'none';
+  gpuType?: string;  // Optional, no longer used in simplified pricing
+  customHourlyRate?: number;  // Optional, no longer used
+}
+
 export interface AppConfig {
   /** @deprecated No longer used - each deployment specifies its own provider */
   activeProviderId?: string;
   defaultNamespace?: string;
+  /** Cost estimation settings for deployment planning */
+  costEstimation?: CostEstimationConfig;
 }
 
 /**
