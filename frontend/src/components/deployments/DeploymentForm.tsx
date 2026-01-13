@@ -12,7 +12,6 @@ import { useConfetti } from '@/components/ui/confetti'
 import { useCreateDeployment, type DeploymentConfig } from '@/hooks/useDeployments'
 import { useHuggingFaceStatus, useGgufFiles } from '@/hooks/useHuggingFace'
 import { usePremadeModels } from '@/hooks/useAikit'
-import { useClusterNodes } from '@/hooks/useClusterStatus'
 import { useToast } from '@/hooks/useToast'
 import { generateDeploymentName, cn } from '@/lib/utils'
 import { type Model, type DetailedClusterCapacity, type AutoscalerDetectionResult, type RuntimeStatus, type PremadeModel, type AIConfiguratorResult, aikitApi, type Engine } from '@/lib/api'
@@ -183,14 +182,9 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
   // KAITO-specific state
   const [kaitoComputeType, setKaitoComputeType] = useState<KaitoComputeType>('cpu')
   const [selectedPremadeModel, setSelectedPremadeModel] = useState<PremadeModel | null>(null)
-  const [preferredNodes, setPreferredNodes] = useState<string[]>([])
   const [ggufFile, setGgufFile] = useState<string>('')
   const [ggufRunMode, setGgufRunMode] = useState<GgufRunMode>('direct')
   const [maxModelLen, setMaxModelLen] = useState<number | undefined>(undefined)
-
-  // Fetch cluster nodes for KAITO preferred nodes selection
-  const { data: clusterNodesData, isLoading: clusterNodesLoading } = useClusterNodes(selectedRuntime === 'kaito');
-  const clusterNodes = clusterNodesData?.nodes || [];
 
   // Check if this is a HuggingFace GGUF model (not a premade model)
   // GGUF models have only llamacpp as supported engine and come from HuggingFace
@@ -310,13 +304,23 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
       engine: currentEngineSupported ? prev.engine : (newAvailableEngines[0] || 'vllm'),
       // Reset router mode if switching away from Dynamo
       routerMode: runtime === 'dynamo' ? prev.routerMode : 'none',
+      // Reset to aggregated mode if switching to KAITO (disaggregated not supported)
+      mode: runtime === 'kaito' ? 'aggregated' : prev.mode,
     }))
 
     // Reset KAITO-specific state when switching away from KAITO
     if (runtime !== 'kaito') {
       setSelectedPremadeModel(null)
       setKaitoComputeType('cpu')
-      setPreferredNodes([])
+    }
+
+    // Reset AI Configurator state when switching away from Dynamo
+    // This ensures optimization badges are cleared when changing providers
+    if (runtime !== 'dynamo') {
+      setAiConfigSupportedBackends(null)
+      setAiConfigRecommendedBackend(null)
+      setAiConfigRecommendedMode(null)
+      setAiConfigRecommendedValues(null)
     }
   }
 
@@ -368,7 +372,6 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
               ggufFile: ggufFile,
               ggufRunMode: 'direct',
               computeType: kaitoComputeType,
-              ...(preferredNodes.length > 0 && { preferredNodes }),
             }
           } else {
             // Build mode - requires Docker and building an image
@@ -419,7 +422,6 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
               ggufRunMode: 'build',
               imageRef: buildResult.imageRef,
               computeType: kaitoComputeType,
-              ...(preferredNodes.length > 0 && { preferredNodes }),
             }
           }
         } else if (isVllmModel) {
@@ -433,7 +435,6 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
             resources: { gpu: gpuCount },
             ...(maxModelLen && { maxModelLen }),
             ...(model.gated && config.hfTokenSecret && { hfTokenSecret: config.hfTokenSecret }),
-            ...(preferredNodes.length > 0 && { preferredNodes }),
           }
         } else {
           // Premade model
@@ -442,7 +443,6 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
             modelSource: 'premade',
             computeType: kaitoComputeType,
             premadeModel: selectedPremadeModel?.id,
-            ...(preferredNodes.length > 0 && { preferredNodes }),
           }
         }
       }
@@ -469,7 +469,7 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
         variant: 'destructive',
       })
     }
-  }, [config, createDeployment, navigate, toast, triggerConfetti, selectedRuntime, kaitoComputeType, selectedPremadeModel, isHuggingFaceGgufModel, isVllmModel, model.id, model.gated, ggufFile, ggufRunMode, preferredNodes, maxModelLen])
+  }, [config, createDeployment, navigate, toast, triggerConfetti, selectedRuntime, kaitoComputeType, selectedPremadeModel, isHuggingFaceGgufModel, isVllmModel, model.id, model.gated, ggufFile, ggufRunMode, maxModelLen])
 
   const updateConfig = <K extends keyof DeploymentConfig>(
     key: K,
@@ -985,73 +985,6 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
                 </RadioGroup>
               </div>
             )}
-
-            {/* Preferred Nodes Selection */}
-            <div className="space-y-3">
-              <Label>Preferred Nodes (Optional)</Label>
-              {clusterNodesLoading ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading cluster nodes...
-                </div>
-              ) : clusterNodes.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {clusterNodes.map((node) => {
-                      const isSelected = preferredNodes.includes(node.name)
-                      return (
-                        <button
-                          key={node.name}
-                          type="button"
-                          onClick={() => {
-                            if (isSelected) {
-                              setPreferredNodes(preferredNodes.filter(n => n !== node.name))
-                            } else {
-                              setPreferredNodes([...preferredNodes, node.name])
-                            }
-                          }}
-                          className={cn(
-                            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm border transition-colors",
-                            isSelected
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "bg-background hover:bg-accent border-input"
-                          )}
-                        >
-                          <span>{node.name}</span>
-                          {node.gpuCount > 0 && (
-                            <Badge variant="secondary" className="text-xs px-1 py-0">
-                              {node.gpuCount} GPU{node.gpuCount > 1 ? 's' : ''}
-                            </Badge>
-                          )}
-                          {!node.ready && (
-                            <Badge variant="destructive" className="text-xs px-1 py-0">
-                              Not Ready
-                            </Badge>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  {preferredNodes.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setPreferredNodes([])}
-                      className="text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      Clear selection
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground py-2">
-                  No schedulable nodes found in the cluster.
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Select nodes to prefer for this deployment.
-                If none selected, KAITO will schedule on any available node matching the label selector.
-              </p>
-            </div>
 
             {/* GGUF File Selection - for HuggingFace GGUF models */}
             {isHuggingFaceGgufModel && (

@@ -1,84 +1,80 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { installationApi, type HelmStatus, type InstallationStatus, type InstallResult } from '@/lib/api'
 
-/**
- * Hook to check Helm CLI availability
- */
 export function useHelmStatus() {
   return useQuery<HelmStatus>({
     queryKey: ['helm-status'],
-    queryFn: async () => {
-      try {
-        return await installationApi.getHelmStatus()
-      } catch {
-        return {
-          available: false,
-          error: 'Failed to check Helm status',
-        }
-      }
-    },
-    refetchInterval: 60000, // Check every minute
-    retry: false,
+    queryFn: () => installationApi.getHelmStatus(),
+    staleTime: 60000, // Cache for 1 minute
   })
 }
 
-/**
- * Hook to check provider installation status
- */
 export function useProviderInstallationStatus(providerId: string) {
   return useQuery<InstallationStatus>({
     queryKey: ['provider-installation-status', providerId],
-    queryFn: async () => {
-      try {
-        return await installationApi.getProviderStatus(providerId)
-      } catch {
-        return {
-          providerId,
-          providerName: providerId,
-          installed: false,
-          crdFound: false,
-          operatorRunning: false,
-          message: 'Failed to check installation status',
-        }
-      }
-    },
-    refetchInterval: 30000, // Check every 30 seconds
-    retry: false,
+    queryFn: () => installationApi.getProviderStatus(providerId),
+    enabled: !!providerId,
+    refetchInterval: 30000, // Refetch every 30 seconds
+  })
+}
+
+export function useProviderCommands(providerId: string) {
+  return useQuery({
+    queryKey: ['provider-commands', providerId],
+    queryFn: () => installationApi.getProviderCommands(providerId),
     enabled: !!providerId,
   })
 }
 
-/**
- * Hook to install a provider
- */
 export function useInstallProvider() {
   const queryClient = useQueryClient()
 
   return useMutation<InstallResult, Error, string>({
-    mutationFn: async (providerId: string) => {
-      return await installationApi.installProvider(providerId)
-    },
+    mutationFn: (providerId: string) => installationApi.installProvider(providerId),
     onSuccess: (_, providerId) => {
-      // Invalidate queries to refresh the UI
+      // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['provider-installation-status', providerId] })
+      queryClient.invalidateQueries({ queryKey: ['cluster-status'] })
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
       queryClient.invalidateQueries({ queryKey: ['runtimes-status'] })
     },
   })
 }
 
-/**
- * Hook to uninstall a provider
- */
+export function useUpgradeProvider() {
+  const queryClient = useQueryClient()
+
+  return useMutation<InstallResult, Error, string>({
+    mutationFn: (providerId: string) => installationApi.upgradeProvider(providerId),
+    onSuccess: (_, providerId) => {
+      queryClient.invalidateQueries({ queryKey: ['provider-installation-status', providerId] })
+      queryClient.invalidateQueries({ queryKey: ['cluster-status'] })
+      queryClient.invalidateQueries({ queryKey: ['runtimes-status'] })
+    },
+  })
+}
+
 export function useUninstallProvider() {
   const queryClient = useQueryClient()
 
   return useMutation<InstallResult, Error, string>({
-    mutationFn: async (providerId: string) => {
-      return await installationApi.uninstallProvider(providerId)
-    },
+    mutationFn: (providerId: string) => installationApi.uninstallProvider(providerId),
     onSuccess: (_, providerId) => {
-      // Invalidate queries to refresh the UI
       queryClient.invalidateQueries({ queryKey: ['provider-installation-status', providerId] })
+      queryClient.invalidateQueries({ queryKey: ['cluster-status'] })
+      queryClient.invalidateQueries({ queryKey: ['runtimes-status'] })
+    },
+  })
+}
+
+export function useUninstallProviderCRDs() {
+  const queryClient = useQueryClient()
+
+  return useMutation<InstallResult, Error, string>({
+    mutationFn: (providerId: string) => installationApi.uninstallProviderCRDs(providerId),
+    onSuccess: (_, providerId) => {
+      queryClient.invalidateQueries({ queryKey: ['provider-installation-status', providerId] })
+      queryClient.invalidateQueries({ queryKey: ['cluster-status'] })
       queryClient.invalidateQueries({ queryKey: ['runtimes-status'] })
     },
   })
