@@ -37,9 +37,29 @@ export interface HfSearchOptions {
   hfToken?: string;
 }
 
+export interface HfStartOAuthRequest {
+  redirectUri: string;
+}
+
+export interface HfStartOAuthResponse {
+  authorizationUrl: string;
+  state: string;
+}
+
+export interface HfVerifierResponse {
+  codeVerifier: string;
+  redirectUri: string;
+}
+
 export interface HuggingFaceApi {
   /** Get OAuth configuration (client ID, scopes) */
   getOAuthConfig: () => Promise<HfOAuthConfig>;
+
+  /** Start OAuth flow - backend generates PKCE and returns authorization URL */
+  startOAuth: (data: HfStartOAuthRequest) => Promise<HfStartOAuthResponse>;
+
+  /** Get stored PKCE verifier by state (used by callback handler) */
+  getVerifier: (state: string) => Promise<HfVerifierResponse>;
 
   /** Exchange authorization code for access token */
   exchangeToken: (data: HfTokenExchangeRequest) => Promise<HfTokenExchangeResponse>;
@@ -66,6 +86,15 @@ export interface HuggingFaceApi {
 export function createHuggingFaceApi(request: RequestFn): HuggingFaceApi {
   return {
     getOAuthConfig: () => request<HfOAuthConfig>('/oauth/huggingface/config'),
+
+    startOAuth: (data: HfStartOAuthRequest) =>
+      request<HfStartOAuthResponse>('/oauth/huggingface/start', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    getVerifier: (state: string) =>
+      request<HfVerifierResponse>(`/oauth/huggingface/verifier/${encodeURIComponent(state)}`),
 
     exchangeToken: (data: HfTokenExchangeRequest) =>
       request<HfTokenExchangeResponse>('/oauth/huggingface/token', {

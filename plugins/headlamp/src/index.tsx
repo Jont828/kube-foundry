@@ -18,6 +18,8 @@ import { DeploymentDetails } from './pages/DeploymentDetails';
 import { ModelsCatalog } from './pages/ModelsCatalog';
 import { RuntimesStatus } from './pages/RuntimesStatus';
 import { CreateDeployment } from './pages/CreateDeployment';
+import { Integrations } from './pages/Integrations';
+import { HuggingFaceCallback } from './pages/HuggingFaceCallback';
 
 // ============================================================================
 // Sidebar Registration
@@ -54,6 +56,14 @@ registerSidebarEntry({
   name: 'kf-runtimes',
   label: 'Runtimes',
   url: ROUTES.RUNTIMES,
+});
+
+// Integrations
+registerSidebarEntry({
+  parent: 'kubefoundry',
+  name: 'kf-integrations',
+  label: 'Integrations',
+  url: ROUTES.INTEGRATIONS,
 });
 
 // Settings (visible from sidebar)
@@ -112,6 +122,24 @@ registerRoute({
   name: 'KubeFoundry Runtimes',
   exact: true,
   component: () => <RuntimesStatus />,
+});
+
+// Integrations
+registerRoute({
+  path: ROUTES.INTEGRATIONS,
+  sidebar: 'kf-integrations',
+  name: 'KubeFoundry Integrations',
+  exact: true,
+  component: () => <Integrations />,
+});
+
+// HuggingFace OAuth Callback
+registerRoute({
+  path: ROUTES.HUGGINGFACE_CALLBACK,
+  sidebar: 'kf-integrations',
+  name: 'HuggingFace Callback',
+  exact: true,
+  component: () => <HuggingFaceCallback />,
 });
 
 // Settings page

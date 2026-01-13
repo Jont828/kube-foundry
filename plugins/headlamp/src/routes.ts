@@ -21,8 +21,14 @@ export const ROUTES = {
   /** Settings page */
   SETTINGS: '/kubefoundry/settings',
 
+  /** Integrations page */
+  INTEGRATIONS: '/kubefoundry/integrations',
+
   /** Create deployment wizard */
   CREATE_DEPLOYMENT: '/kubefoundry/deployments/create',
+
+  /** HuggingFace OAuth callback */
+  HUGGINGFACE_CALLBACK: '/kubefoundry/oauth/callback/huggingface',
 } as const;
 
 /**
@@ -41,4 +47,12 @@ export function getCreateDeploymentUrl(modelId: string, source?: 'huggingface' |
     params.append('source', source);
   }
   return `${ROUTES.CREATE_DEPLOYMENT}?${params.toString()}`;
+}
+
+/**
+ * Get the full OAuth callback URL for HuggingFace
+ * Uses the current window origin to support different environments
+ */
+export function getHuggingFaceCallbackUrl(): string {
+  return `${window.location.origin}${ROUTES.HUGGINGFACE_CALLBACK}`;
 }
