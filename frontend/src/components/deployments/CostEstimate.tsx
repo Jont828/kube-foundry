@@ -389,13 +389,11 @@ export function CostEstimate({
         })}
 
         {/* Notes */}
-        <div className="pt-2 border-t text-xs text-muted-foreground space-y-0.5">
-          <p>• Spot/preemptible instances can save 60-80%</p>
-          <p>• Reserved instances (1-3 yr) can save 30-60%</p>
-          {pricingSource.includes('realtime') && (
+        {pricingSource.includes('realtime') && (
+          <div className="pt-2 border-t text-xs text-muted-foreground">
             <p className="text-green-600 dark:text-green-400">• Prices from Azure Retail Prices API</p>
-          )}
-        </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
