@@ -10,11 +10,11 @@ import {
   SectionBox,
   Loader,
 } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
+import { Router } from '@kinvolk/headlamp-plugin/lib';
 import { useApiClient } from '../lib/api-client';
 import type { Model, HfModelSearchResult } from '@kubefoundry/shared';
 import { ConnectionError } from '../components/ConnectionBanner';
 import { getBadgeColors } from '../lib/theme';
-import { ROUTES } from '../routes';
 
 type TabType = 'curated' | 'huggingface';
 
@@ -175,7 +175,10 @@ export function ModelsCatalog() {
                     )}
 
                     <button
-                      onClick={() => history.push(`${ROUTES.CREATE_DEPLOYMENT}?modelId=${encodeURIComponent(model.id)}`)}
+                      onClick={() => {
+                        const url = Router.createRouteURL('Create Deployment');
+                        history.push(`${url}?modelId=${encodeURIComponent(model.id)}`);
+                      }}
                       style={{
                         display: 'inline-block',
                         padding: '6px 12px',
@@ -277,7 +280,10 @@ export function ModelsCatalog() {
                   )}
 
                   <button
-                    onClick={() => history.push(`${ROUTES.CREATE_DEPLOYMENT}?modelId=${encodeURIComponent(model.id)}&source=huggingface`)}
+                    onClick={() => {
+                      const url = Router.createRouteURL('Create Deployment');
+                      history.push(`${url}?modelId=${encodeURIComponent(model.id)}&source=huggingface`);
+                    }}
                     style={{
                       display: 'inline-block',
                       padding: '6px 12px',

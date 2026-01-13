@@ -11,8 +11,8 @@ import {
   SectionBox,
   Loader,
 } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
+import { Router } from '@kinvolk/headlamp-plugin/lib';
 import { useApiClient } from '../lib/api-client';
-import { ROUTES } from '../routes';
 import type { DeploymentConfig, Engine, Model, RuntimeStatus, ModelTask } from '@kubefoundry/shared';
 import { getBadgeColors } from '../lib/theme';
 
@@ -227,7 +227,7 @@ export function CreateDeployment() {
       };
 
       await api.deployments.create(config);
-      history.push(ROUTES.DEPLOYMENTS);
+      history.push(Router.createRouteURL('KubeFoundry Deployments'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create deployment');
     } finally {
@@ -256,7 +256,7 @@ export function CreateDeployment() {
             Please select a model from the catalog to deploy.
           </p>
           <button
-            onClick={() => history.push(ROUTES.MODELS)}
+            onClick={() => history.push(Router.createRouteURL('KubeFoundry Models'))}
             style={{
               padding: '12px 24px',
               backgroundColor: '#1976d2',
@@ -282,7 +282,7 @@ export function CreateDeployment() {
       {/* Back button */}
       <div style={{ marginBottom: '24px' }}>
         <button
-          onClick={() => history.push(ROUTES.MODELS)}
+          onClick={() => history.push(Router.createRouteURL('KubeFoundry Models'))}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -660,7 +660,7 @@ export function CreateDeployment() {
         borderTop: '1px solid rgba(128, 128, 128, 0.3)',
       }}>
         <button
-          onClick={() => history.push(ROUTES.MODELS)}
+          onClick={() => history.push(Router.createRouteURL('KubeFoundry Models'))}
           style={{
             padding: '12px 24px',
             backgroundColor: 'transparent',
