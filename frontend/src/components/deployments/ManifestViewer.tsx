@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { deploymentsApi, type DeploymentConfig } from '@/lib/api';
 import { useDeploymentManifest } from '@/hooks/useDeployments';
-import { Loader2, Copy, Code, FileJson, ChevronDown, ChevronRight, Eye, EyeOff, Layers } from 'lucide-react';
+import { Loader2, Copy, Code, FileJson, ChevronDown, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/useToast';
 import YAML from 'yaml';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 /**
  * Resource info type shared between preview and deployed modes
@@ -222,10 +224,7 @@ export function ManifestViewer(props: ManifestViewerProps) {
     return (
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Layers className="h-5 w-5" />
-            <CardTitle>{title}</CardTitle>
-          </div>
+          <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-destructive">
@@ -244,16 +243,8 @@ export function ManifestViewer(props: ManifestViewerProps) {
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {isCollapsible && (
-              isExpanded ? (
-                <EyeOff className="h-5 w-5 text-muted-foreground" />
-              ) : (
-                <Eye className="h-5 w-5 text-muted-foreground" />
-              )
-            )}
             <div>
               <CardTitle className="flex items-center gap-2">
-                <Layers className="h-5 w-5" />
                 {title}
                 {resources.length > 0 && (
                   <Badge variant="outline" className="ml-1">
@@ -261,12 +252,6 @@ export function ManifestViewer(props: ManifestViewerProps) {
                   </Badge>
                 )}
               </CardTitle>
-              <CardDescription className="mt-1">
-                {isCollapsible
-                  ? (isExpanded ? 'Click to collapse' : 'Click to preview the Kubernetes manifests that will be created')
-                  : 'Kubernetes resources for this deployment'
-                }
-              </CardDescription>
             </div>
           </div>
           
@@ -355,15 +340,27 @@ export function ManifestViewer(props: ManifestViewerProps) {
                 </TabsList>
                 
                 <TabsContent value="yaml">
-                  <pre className="overflow-auto max-h-[500px] rounded-lg bg-muted p-4 text-xs font-mono">
-                    {YAML.stringify(selectedResource.manifest, { indent: 2 })}
-                  </pre>
+                  <div className="overflow-auto max-h-[500px] rounded-lg text-xs">
+                    <SyntaxHighlighter
+                      language="yaml"
+                      style={oneDark}
+                      customStyle={{ margin: 0, borderRadius: '0.5rem', fontSize: '0.75rem' }}
+                    >
+                      {YAML.stringify(selectedResource.manifest, { indent: 2 })}
+                    </SyntaxHighlighter>
+                  </div>
                 </TabsContent>
                 
                 <TabsContent value="json">
-                  <pre className="overflow-auto max-h-[500px] rounded-lg bg-muted p-4 text-xs font-mono">
-                    {JSON.stringify(selectedResource.manifest, null, 2)}
-                  </pre>
+                  <div className="overflow-auto max-h-[500px] rounded-lg text-xs">
+                    <SyntaxHighlighter
+                      language="json"
+                      style={oneDark}
+                      customStyle={{ margin: 0, borderRadius: '0.5rem', fontSize: '0.75rem' }}
+                    >
+                      {JSON.stringify(selectedResource.manifest, null, 2)}
+                    </SyntaxHighlighter>
+                  </div>
                 </TabsContent>
                 
                 <TabsContent value="tree">

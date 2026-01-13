@@ -1369,7 +1369,6 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
                 ggufFile: ggufFile,
                 ggufRunMode: ggufRunMode,
                 computeType: kaitoComputeType,
-                ...(preferredNodes.length > 0 && { preferredNodes }),
               };
             } else if (isVllmModel) {
               previewConfig = {
@@ -1378,7 +1377,6 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
                 modelId: model.id,
                 computeType: 'gpu' as const,
                 ...(maxModelLen && { maxModelLen }),
-                ...(preferredNodes.length > 0 && { preferredNodes }),
               };
             } else if (selectedPremadeModel) {
               previewConfig = {
@@ -1386,7 +1384,6 @@ export function DeploymentForm({ model, detailedCapacity, autoscaler, runtimes }
                 modelSource: 'premade' as const,
                 computeType: kaitoComputeType,
                 premadeModel: selectedPremadeModel.id,
-                ...(preferredNodes.length > 0 && { preferredNodes }),
               };
             }
           }
