@@ -1270,10 +1270,19 @@ Get real-time pricing for a specific instance type.
 }
 ```
 
+**Response (pricing not found):**
+```json
+{
+  "success": false,
+  "error": "Price not found",
+  "provider": "azure"
+}
+```
+
 **Provider Detection:**
 - Azure: Instance types starting with `Standard_` or `Basic_`
-- AWS: Instance types with format like `p4d.24xlarge`, `g5.xlarge`
-- GCP: Instance types like `n1-standard-4`, `a2-highgpu-1g`
+- AWS: Instance types with format like `p4d.24xlarge`, `g5.xlarge` (not yet implemented)
+- GCP: Instance types like `n1-standard-4`, `a2-highgpu-1g` (not yet implemented)
 
 ### GET /costs/gpu-models
 Get list of supported GPU models with specifications.
@@ -1303,6 +1312,12 @@ Get list of supported GPU models with specifications.
 }
 ```
 
+**Notes:**
+- Returns GPU specifications only (memory, generation)
+- For real-time pricing, use `/costs/node-pools` or `/costs/instance-price` endpoints
+- GPU models are used for normalization and capacity planning
+```
+
 ### GET /costs/normalize-gpu
 Normalize a GPU label to a standard GPU model name.
 
@@ -1325,21 +1340,6 @@ Normalize a GPU label to a standard GPU model name.
 **Notes:**
 - Handles various GPU label formats: NVIDIA prefixes, SXM/PCIe variants, Tesla prefixes
 - Returns GPU specifications when available
-
-### POST /costs/clear-cache
-Clear the pricing cache (admin endpoint).
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Pricing cache cleared"
-}
-```
-
-**Notes:**
-- Requires authentication when auth is enabled
-- Use to force fresh pricing data from cloud APIs
 
 ## Error Responses
 

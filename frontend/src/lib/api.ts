@@ -714,20 +714,24 @@ export const costsApi = {
     request<{
       success: boolean;
       nodePoolCosts: NodePoolCostEstimate[];
-      pricingLastUpdated: string;
+      pricingSource: 'realtime-with-fallback' | 'static';
+      cacheStats: {
+        size: number;
+        ttlMs: number;
+        maxEntries: number;
+      };
     }>(`/costs/node-pools?gpuCount=${gpuCount}&replicas=${replicas}&computeType=${computeType}`),
 
-  /** Get list of supported GPU models with pricing */
+  /** Get list of supported GPU models with specifications */
   getGpuModels: () =>
     request<{
       success: boolean;
       models: Array<{
         model: string;
         memoryGb: number;
-        avgHourlyRate: number;
         generation: string;
       }>;
-      pricingLastUpdated: string;
+      note: string;
     }>('/costs/gpu-models'),
 
   /** Normalize a GPU model name to our pricing key */

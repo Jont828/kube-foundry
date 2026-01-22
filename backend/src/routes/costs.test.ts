@@ -311,39 +311,6 @@ describe('Costs Routes', () => {
     });
   });
 
-  describe('POST /api/costs/clear-cache', () => {
-    test('clears the pricing cache', async () => {
-      // First, populate the cache
-      mockFetch({
-        Items: [
-          {
-            retailPrice: 3.5,
-            currencyCode: 'USD',
-            armRegionName: 'eastus',
-            effectiveStartDate: '2024-01-01',
-            productName: 'Virtual Machines NC Series',
-            meterName: 'NC24ads A100 v4',
-            unitOfMeasure: '1 Hour',
-          },
-        ],
-      });
-
-      await app.request('/api/costs/instance-price?instanceType=Standard_NC24ads_A100_v4');
-      expect(cloudPricingService.getCacheStats().size).toBe(1);
-
-      // Clear cache
-      const res = await app.request('/api/costs/clear-cache', { method: 'POST' });
-      expect(res.status).toBe(200);
-
-      const data = await res.json();
-      expect(data.success).toBe(true);
-      expect(data.message).toContain('cache cleared');
-
-      // Verify cache is empty
-      expect(cloudPricingService.getCacheStats().size).toBe(0);
-    });
-  });
-
   describe('GET /api/costs/node-pools', () => {
     test('returns node pool costs with cache stats', async () => {
       // This endpoint requires K8s, so we test the response structure

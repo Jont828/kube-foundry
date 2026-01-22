@@ -71,6 +71,71 @@ describe('CloudPricingService', () => {
     });
   });
 
+  describe('input validation', () => {
+    test('rejects instance types with OData injection attempts', async () => {
+      const result = await cloudPricingService.getInstancePrice(
+        "Standard_NC24' or '1'='1",
+        'azure',
+        'eastus'
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid instance type format');
+    });
+
+    test('rejects instance types with special characters', async () => {
+      const result = await cloudPricingService.getInstancePrice(
+        'Standard_NC24; DROP TABLE',
+        'azure',
+        'eastus'
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid instance type format');
+    });
+
+    test('rejects regions with injection attempts', async () => {
+      const result = await cloudPricingService.getInstancePrice(
+        'Standard_NC24ads_A100_v4',
+        'azure',
+        "eastus' or '1'='1"
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid region format');
+    });
+
+    test('rejects overly long instance types', async () => {
+      const result = await cloudPricingService.getInstancePrice(
+        'Standard_' + 'A'.repeat(100),
+        'azure',
+        'eastus'
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Instance type too long');
+    });
+
+    test('accepts valid Azure instance types', async () => {
+      mockFetch({ Items: [] }); // Empty response is fine, we're testing validation passes
+      
+      const result = await cloudPricingService.getInstancePrice(
+        'Standard_NC24ads_A100_v4',
+        'azure',
+        'eastus'
+      );
+      // Should reach the API (validation passed) even if no price found
+      expect(result.error).not.toContain('Invalid');
+    });
+
+    test('accepts instance types with hyphens', async () => {
+      mockFetch({ Items: [] });
+      
+      const result = await cloudPricingService.getInstancePrice(
+        'Standard_NC24ads-A100-v4',
+        'azure',
+        'eastus'
+      );
+      expect(result.error).not.toContain('Invalid');
+    });
+  });
+
   describe('getInstancePrice', () => {
     test('returns cached price on cache hit', async () => {
       // First call - cache miss

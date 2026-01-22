@@ -62,7 +62,7 @@ export function CostEstimate({
         const response = await costsApi.getNodePoolCosts(gpuCount, replicas, computeType)
         if (response.success && response.nodePoolCosts) {
           setNodePoolCosts(response.nodePoolCosts)
-          setPricingSource((response as unknown as { pricingSource?: string }).pricingSource || 'realtime')
+          setPricingSource(response.pricingSource || 'realtime')
           
           // Check if any pool has real-time pricing - if none do, provider is unsupported
           const hasRealtimePricing = response.nodePoolCosts.some(

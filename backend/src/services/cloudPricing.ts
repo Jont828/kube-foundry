@@ -178,6 +178,39 @@ class CloudPricingService {
   }
 
   /**
+   * Validate and sanitize instance type for OData filter
+   * Prevents OData injection attacks
+   */
+  private validateInstanceType(instanceType: string): string {
+    // Azure instance types follow pattern: Standard_* or Basic_*
+    // Allow alphanumeric, underscores, and hyphens only
+    const sanitized = instanceType.trim();
+    if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(sanitized)) {
+      throw new Error(`Invalid instance type format: ${instanceType}`);
+    }
+    if (sanitized.length > 100) {
+      throw new Error('Instance type too long');
+    }
+    return sanitized;
+  }
+
+  /**
+   * Validate and sanitize region for OData filter
+   * Prevents OData injection attacks
+   */
+  private validateRegion(region: string): string {
+    // Azure regions are lowercase alphanumeric with optional numbers
+    const sanitized = region.trim().toLowerCase();
+    if (!/^[a-z][a-z0-9]*$/.test(sanitized)) {
+      throw new Error(`Invalid region format: ${region}`);
+    }
+    if (sanitized.length > 50) {
+      throw new Error('Region too long');
+    }
+    return sanitized;
+  }
+
+  /**
    * Fetch pricing from Azure Retail Prices API
    * https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
    */
@@ -185,12 +218,16 @@ class CloudPricingService {
     instanceType: string,
     region?: string
   ): Promise<InstancePrice | undefined> {
+    // Validate inputs to prevent OData injection
+    const validatedInstanceType = this.validateInstanceType(instanceType);
+    const validatedRegion = region ? this.validateRegion(region) : undefined;
+
     // Build filter query
     // We want Linux VM consumption (pay-as-you-go) pricing
-    let filter = `armSkuName eq '${instanceType}' and priceType eq 'Consumption' and contains(meterName, 'Spot') eq false`;
+    let filter = `armSkuName eq '${validatedInstanceType}' and priceType eq 'Consumption' and contains(meterName, 'Spot') eq false`;
 
-    if (region) {
-      filter += ` and armRegionName eq '${region}'`;
+    if (validatedRegion) {
+      filter += ` and armRegionName eq '${validatedRegion}'`;
     }
 
     const url = `https://prices.azure.com/api/retail/prices?$filter=${encodeURIComponent(filter)}`;
@@ -288,11 +325,20 @@ class CloudPricingService {
 
   /**
    * Get pricing for all GPU node pools in the cluster
+   * Fetches pricing in parallel for better performance
    */
   async getNodePoolPricing(
     nodePools: Array<{ name: string; instanceType?: string; region?: string }>
   ): Promise<Map<string, PricingLookupResult>> {
     const results = new Map<string, PricingLookupResult>();
+
+    // Build list of pools that need pricing lookups
+    const lookupTasks: Array<{
+      poolName: string;
+      instanceType: string;
+      provider: 'azure' | 'aws' | 'gcp';
+      region?: string;
+    }> = [];
 
     for (const pool of nodePools) {
       if (!pool.instanceType) {
@@ -313,8 +359,25 @@ class CloudPricingService {
         continue;
       }
 
-      const result = await this.getInstancePrice(pool.instanceType, provider, pool.region);
-      results.set(pool.name, result);
+      lookupTasks.push({
+        poolName: pool.name,
+        instanceType: pool.instanceType,
+        provider,
+        region: pool.region,
+      });
+    }
+
+    // Fetch all prices in parallel
+    const pricingResults = await Promise.all(
+      lookupTasks.map(async (task) => {
+        const result = await this.getInstancePrice(task.instanceType, task.provider, task.region);
+        return { poolName: task.poolName, result };
+      })
+    );
+
+    // Populate results map
+    for (const { poolName, result } of pricingResults) {
+      results.set(poolName, result);
     }
 
     return results;

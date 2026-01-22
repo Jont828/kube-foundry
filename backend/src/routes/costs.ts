@@ -243,12 +243,4 @@ export const costsRoutes = new Hono()
           }
         : null,
     });
-  })
-
-  /**
-   * Clear pricing cache (admin endpoint)
-   */
-  .post('/clear-cache', (c) => {
-    cloudPricingService.clearCache();
-    return c.json({ success: true, message: 'Pricing cache cleared' });
   });
